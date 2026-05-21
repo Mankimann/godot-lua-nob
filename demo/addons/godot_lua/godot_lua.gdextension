@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "godot_lua_library_init"
+compatibility_minimum = "4.5"
+reloadable = true
+
+[libraries]
+linux.debug.x86_64 = "res://addons/godot_lua/bin/libgodot_lua.linux.debug.x86_64.so"
+linux.release.x86_64 = "res://addons/godot_lua/bin/libgodot_lua.linux.release.x86_64.so"
+linux.debug.arm64 = "res://addons/godot_lua/bin/libgodot_lua.linux.debug.arm64.so"
+linux.release.arm64 = "res://addons/godot_lua/bin/libgodot_lua.linux.release.arm64.so"
+macos.debug.x86_64 = "res://addons/godot_lua/bin/libgodot_lua.macos.debug.x86_64.dylib"
+macos.release.x86_64 = "res://addons/godot_lua/bin/libgodot_lua.macos.release.x86_64.dylib"
+macos.debug.arm64 = "res://addons/godot_lua/bin/libgodot_lua.macos.debug.arm64.dylib"
+macos.release.arm64 = "res://addons/godot_lua/bin/libgodot_lua.macos.release.arm64.dylib"
+windows.debug.x86_64 = "res://addons/godot_lua/bin/godot_lua.windows.debug.x86_64.dll"
+windows.release.x86_64 = "res://addons/godot_lua/bin/godot_lua.windows.release.x86_64.dll"

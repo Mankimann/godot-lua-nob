@@ -1,0 +1,33 @@
+name: Build Godot Lua GDExtension
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  linux-debug:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential python3
+
+      - name: Bootstrap nob
+        run: cc -o nob nob.c
+
+      - name: Build debug extension
+        run: ./nob build debug platform=linux arch=x86_64
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-lua-linux-debug-x86_64
+          path: demo/addons/godot_lua/bin/*
