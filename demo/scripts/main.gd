@@ -23,16 +23,21 @@ func _ready() -> void:
     print("Lua diagnostics: ", lua.diagnostics())
 
     var native_script := LuaScript.new()
-    native_script.set_path_hint("res://scripts/native_node.lua")
-    native_script.set_source_code(FileAccess.get_file_as_string("res://scripts/native_node.lua"))
-    native_script.reload(false)
+    native_script.load_from_file("res://scripts/native_node.lua")
 
     var native_instance := LuaScriptInstance.new()
-    var err := native_instance.initialize(self, native_script)
+    var err := native_instance.initialize_from_file(self, "res://scripts/native_node.lua", {"spawn_count": 1})
     if err != OK:
         push_error("LuaScriptInstance initialization failed: %s" % err)
         return
 
     native_instance.ready_notification()
+    native_instance.process_notification(0.016)
     print(native_instance.call_method("greet", ["Godot"]))
-    print("Native LuaScript methods: ", native_script.get_discovered_methods())
+    print("Native LuaScript diagnostics: ", native_instance.diagnostics())
+
+    var host := LuaScriptHost.new()
+    host.lua_script_path = "res://scripts/native_node.lua"
+    host.forward_process = false
+    add_child(host)
+    print("LuaScriptHost added: ", host.name)

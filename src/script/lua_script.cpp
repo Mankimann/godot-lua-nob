@@ -2,6 +2,7 @@
 #include <godot_lua/lua_script_instance.hpp>
 #include <godot_lua/lua_script_language.hpp>
 
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -77,6 +78,7 @@ static int count_function_args(const String &p_line) {
 void LuaScript::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_path_hint", "path"), &LuaScript::set_path_hint);
     ClassDB::bind_method(D_METHOD("get_path_hint"), &LuaScript::get_path_hint);
+    ClassDB::bind_method(D_METHOD("load_from_file", "path"), &LuaScript::load_from_file);
     ClassDB::bind_method(D_METHOD("get_discovered_methods"), &LuaScript::get_discovered_methods);
 }
 
@@ -89,6 +91,18 @@ void LuaScript::set_path_hint(const String &p_path) {
 
 String LuaScript::get_path_hint() const {
     return source_path;
+}
+
+Error LuaScript::load_from_file(const String &p_path) {
+    if (!FileAccess::file_exists(p_path)) {
+        UtilityFunctions::push_error(String("Lua script file not found: ") + p_path);
+        return ERR_FILE_NOT_FOUND;
+    }
+
+    source_path = p_path;
+    source_code = FileAccess::get_file_as_string(p_path);
+    analyze_source();
+    return valid ? OK : ERR_PARSE_ERROR;
 }
 
 Dictionary LuaScript::get_discovered_methods() const {

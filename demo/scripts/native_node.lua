@@ -17,6 +17,14 @@ function _process(delta)
     return frames
 end
 
+function _physics_process(delta)
+    return delta
+end
+
+function _exit_tree()
+    godot.print("LuaNativeDemo._exit_tree after frames=", frames)
+end
+
 function greet(name)
     return "Hello " .. tostring(name) .. " from native LuaScript"
 end

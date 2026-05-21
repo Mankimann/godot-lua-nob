@@ -31,11 +31,18 @@ public:
     ~LuaScriptInstance() override = default;
 
     Error initialize(Object *p_owner, const Ref<LuaScript> &p_script);
+    Error initialize_with_properties(Object *p_owner, const Ref<LuaScript> &p_script, const Dictionary &p_initial_properties);
+    Error initialize_from_file(Object *p_owner, const String &p_path, const Dictionary &p_initial_properties = Dictionary());
+    Error reload(bool p_keep_properties = true);
     bool is_ready() const;
 
     Object *get_owner_object() const;
     Ref<LuaState> get_state() const;
     Ref<LuaScript> get_script_resource() const;
+    Dictionary diagnostics() const;
+
+    void add_module_root(const String &p_root);
+    Array get_module_roots() const;
 
     Variant call_method(const StringName &p_method, const Array &p_args = Array());
     bool has_method(const StringName &p_method) const;
@@ -50,6 +57,7 @@ public:
     void physics_process_notification(double p_delta);
     void input_notification(const Variant &p_event);
     void unhandled_input_notification(const Variant &p_event);
+    void exit_tree_notification();
 };
 
 } // namespace godot

@@ -25,8 +25,9 @@ LuaJIT wird als primäre Runtime verwendet, weil das Projekt ausdrücklich perfo
 | `LuaCallable` | Brücke von Lua-Funktionen zu Godot-Callables und Signal-Callbacks. |
 | `lua_variant_bridge` | Konvertierung zwischen Lua-Werten und Godot-`Variant`, Object-Userdata, Module Loader und globale `godot`-API. |
 | `LuaScriptLanguage` | Godot-Sprachregistrierung für `.lua`, Templates, Syntaxvalidierung und Editor-Reflection-Stubs. |
-| `LuaScript` | Godot-`Script`-Resource für Lua-Quellcode, Methodenerkennung und Metadaten. |
-| `LuaScriptInstance` | Expliziter Runtime-Wrapper für Owner-Objekt, LuaState und Lifecycle-Dispatch. |
+| `LuaScript` | Godot-`Script`-Resource für Lua-Quellcode, Datei-Loading, Methodenerkennung und Metadaten. |
+| `LuaScriptInstance` | Expliziter Runtime-Wrapper für Owner-Objekt, LuaState, Initial-Properties, Reload, Diagnostik und Lifecycle-Dispatch. |
+| `LuaScriptHost` | GDScript-Node-Brücke für direkt nutzbare Lua-Komponenten ohne native `ScriptInstance`-ABI. |
 
 ## Build-Pipeline
 
@@ -43,14 +44,15 @@ nob.c
 
 ## ScriptLanguageExtension-Schicht
 
-Die erste editornahe Schicht registriert `LuaScriptLanguage` über `Engine::register_script_language()` als Godot-Skriptsprache für die Endung `.lua`. `LuaScript` speichert und analysiert Quellcode als `ScriptExtension`-Resource. `LuaScriptInstance` kapselt die kontrollierte Ausführung gegen ein Besitzerobjekt und ruft Lifecycle-Funktionen wie `_ready`, `_process`, `_physics_process`, `_input` und `_unhandled_input` über die bestehende `LuaState`-API auf.
+Die erste editornahe Schicht registriert `LuaScriptLanguage` über `Engine::register_script_language()` als Godot-Skriptsprache für die Endung `.lua`. `LuaScript` speichert und analysiert Quellcode als `ScriptExtension`-Resource und kann Dateien direkt per `load_from_file(path)` laden. `LuaScriptInstance` kapselt die kontrollierte Ausführung gegen ein Besitzerobjekt, setzt `self` und `owner`, übernimmt Initial-Properties, leitet den Skriptordner als Modul-Root ab und ruft Lifecycle-Funktionen wie `_ready`, `_process`, `_physics_process`, `_input`, `_unhandled_input` und `_exit_tree` über die bestehende `LuaState`-API auf.
 
 | Ebene | Umsetzung | Produktionsnotiz |
 |---|---|---|
 | Sprachregistrierung | `LuaScriptLanguage : ScriptLanguageExtension` | Singleton-Lebensdauer wird in `register_types.cpp` gehalten, weil Godot einen stabilen Sprachzeiger speichert. |
-| Script-Resource | `LuaScript : ScriptExtension` | Quellcode, Pfadhinweis, einfache Funktionsanalyse und Reflection-Listen sind implementiert. |
-| Runtime-Instanz | `LuaScriptInstance : RefCounted` | Sicherer Übergangspfad für expliziten Dispatch; der finale native C-API-`ScriptInstance`-Handle bleibt ein isolierter nächster Schritt. |
-| Typisierte Tooling-API | `tools/generate_api_wrappers.py` | Erzeugt EmmyLua/LuaLS-Stubs aus `extension_api.json` und Projektklassen, ohne die Runtime-Brücke zu ersetzen. |
+| Script-Resource | `LuaScript : ScriptExtension` | Quellcode, Pfadhinweis, Datei-Loading, einfache Funktionsanalyse und Reflection-Listen sind implementiert. |
+| Runtime-Instanz | `LuaScriptInstance : RefCounted` | Sicherer Übergangspfad für expliziten Dispatch, Reload und Diagnostik; der finale native C-API-`ScriptInstance`-Handle bleibt ein isolierter nächster Schritt. |
+| Host-Brücke | `demo/scripts/lua_script_host.gd` | Wiederverwendbarer Node-Wrapper für praktische Lua-Komponenten im aktuellen ABI-Stand. |
+| Typisierte Tooling-API | `tools/generate_api_wrappers.py` | Erzeugt EmmyLua/LuaLS-Stubs aus `extension_api.json`, Projektklassen und Runtime-Helfern, ohne die Runtime-Brücke zu ersetzen. |
 
 ## Godot-Brücke
 
@@ -72,4 +74,4 @@ Die Runtime verwendet Policies statt einer einzigen globalen Sandbox. Das ist f�
 
 ## Nächste Architektur-Stufe
 
-Die aktuelle Architektur ist eine erweiterte Runtime-Foundation mit erster `ScriptLanguageExtension`-Integration und Typed-API-Generator. Für ein nahezu vollständiges Godot-Lua-Erlebnis sind die nächsten Schritte ein nativer Godot-C-API-`ScriptInstance`-Descriptor, Headless-Godot-Integrationstests, Ressourcenlimits und ein Debugger-/Diagnostics-Workflow im Editor.
+Die aktuelle Architektur ist eine erweiterte Runtime-Foundation mit erster `ScriptLanguageExtension`-Integration, praktischer Host-Brücke und Typed-API-Generator. Für ein nahezu vollständiges Godot-Lua-Erlebnis sind die nächsten Schritte ein nativer Godot-C-API-`ScriptInstance`-Descriptor, Headless-Godot-Integrationstests, Ressourcenlimits und ein Debugger-/Diagnostics-Workflow im Editor.

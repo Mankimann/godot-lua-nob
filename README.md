@@ -76,10 +76,18 @@ Zusätzlich zur expliziten `LuaState`-Nutzung registriert die GDExtension nun ei
 | Klasse | Aufgabe | Status |
 |---|---|---|
 | `LuaScriptLanguage` | Sprachmetadaten, `.lua`-Erkennung, Templates, Syntaxvalidierung per LuaJIT-Parser und Engine-Registrierung. | Implementiert als konservative `ScriptLanguageExtension`. |
-| `LuaScript` | Speichert Quellcode, erkennt Lua-Funktionen, liefert Editor-/Reflection-Metadaten und Script-Resource-Verhalten. | Implementiert; native C-API-`ScriptInstance`-Handle ist als nächster ABI-Schritt markiert. |
-| `LuaScriptInstance` | Führt ein Lua-Skript mit `self`-Owner aus und dispatcht Lifecycle-Methoden explizit aus Godot. | Nutzbar aus GDScript und C++ als sicherer Übergangspfad. |
+| `LuaScript` | Speichert Quellcode, erkennt Lua-Funktionen, liefert Editor-/Reflection-Metadaten und Script-Resource-Verhalten. | Mit `load_from_file(path)` direkt aus `res://` nutzbar; native C-API-`ScriptInstance`-Handle bleibt der nächste ABI-Schritt. |
+| `LuaScriptInstance` | Führt ein Lua-Skript mit `self`/`owner` aus und dispatcht Lifecycle-Methoden explizit aus Godot. | Unterstützt `initialize_from_file`, Initial-Properties, Reload, Modulpfade, Diagnostik und `_exit_tree`. |
 
-Das Demo-Projekt enthält `demo/scripts/native_node.lua` und zeigt in `demo/scripts/main.gd`, wie eine `LuaScript`-Resource erzeugt, mit Quellcode gefüllt und über `LuaScriptInstance` ausgeführt wird. Damit ist die Sprachregistrierung im Editor vorbereitet, während der finale Godot-C-API-`ScriptInstance`-Descriptor separat und risikoarm ergänzt werden kann.
+Das Demo-Projekt enthält `demo/scripts/native_node.lua` und zeigt in `demo/scripts/main.gd`, wie eine `LuaScript`-Resource per `load_from_file` geladen und über `LuaScriptInstance.initialize_from_file` ausgeführt wird. Für den Alltag gibt es zusätzlich `demo/scripts/lua_script_host.gd`: Dieser Node lädt eine `.lua`-Datei über `@export_file`, leitet `_ready`, `_process`, `_physics_process`, `_input`, `_unhandled_input` und `_exit_tree` weiter und bietet `call_lua`, `reload_lua`, Property-Zugriff sowie Diagnostik. Damit kann ein Godot-Node schon jetzt eine Lua-Komponente verwenden, während der finale Godot-C-API-`ScriptInstance`-Descriptor separat und risikoarm ergänzt werden kann.
+
+```gdscript
+var host := LuaScriptHost.new()
+host.lua_script_path = "res://scripts/native_node.lua"
+host.initial_properties = {"spawn_count": 1}
+add_child(host)
+print(host.call_lua("greet", ["Godot"]))
+```
 
 ## LuaJIT-API
 
@@ -125,11 +133,11 @@ Die Runtime unterscheidet mehrere Vertrauenszonen. Für ein großes Projekt ist 
 
 ## Demo
 
-Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` als `LuaScript`, initialisiert eine `LuaScriptInstance`, ruft `_ready` sowie eine Lua-Methode auf und gibt die erkannten Lua-Methoden aus. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks und die neue Script-Resource-Schicht.
+Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` per `LuaScript.load_from_file`, initialisiert eine `LuaScriptInstance` direkt aus der Datei, ruft `_ready`, `_process` sowie eine Lua-Methode auf und gibt Diagnostik aus. Zusätzlich erzeugt sie einen `LuaScriptHost`, der dasselbe Lua-Skript als wiederverwendbare Node-Komponente lädt. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks, Lifecycle-Weiterleitung und die neue Script-Resource-Schicht.
 
 ## Typed Lua-API-Generator
 
-Für große Projekte enthält `tools/generate_api_wrappers.py` einen Generator für typisierte Lua-Stubs. Er liest eine Godot-`extension_api.json`, erzeugt EmmyLua/LuaLS-kompatible Klassenmodule und kann zusätzlich ein Projektverzeichnis nach `class_name`-GDScript-Dateien sowie nach Lua-Dateien mit `---@class`-Annotationen scannen.
+Für große Projekte enthält `tools/generate_api_wrappers.py` einen Generator für typisierte Lua-Stubs. Er liest eine Godot-`extension_api.json`, erzeugt EmmyLua/LuaLS-kompatible Klassenmodule, schreibt nun auch `godot/runtime.lua` für die globalen Lua-Helfer und kann zusätzlich ein Projektverzeichnis nach `class_name`-GDScript-Dateien sowie nach Lua-Dateien mit `---@class`-Annotationen scannen.
 
 ```bash
 python3.11 tools/generate_api_wrappers.py \

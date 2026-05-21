@@ -179,6 +179,72 @@ def render_project_class_stub(cls: Dict[str, str]) -> str:
     ])
 
 
+def render_runtime_stub() -> str:
+    return "\n".join([
+        "---@meta",
+        "-- Generated Godot Lua runtime helper declarations. Do not edit manually.",
+        "",
+        "---@class GodotLuaRuntime",
+        "local godot = {}",
+        "",
+        "---@param ... any",
+        "function godot.print(...) end",
+        "",
+        "---@param ... any",
+        "function godot.push_warning(...) end",
+        "",
+        "---@param ... any",
+        "function godot.push_error(...) end",
+        "",
+        "---@param name string",
+        "---@return Object|nil",
+        "function godot.get_singleton(name) end",
+        "",
+        "---@param path string",
+        "---@return Resource|nil",
+        "function godot.load_resource(path) end",
+        "",
+        "---@param value any",
+        "---@return string",
+        "function godot.variant_type(value) end",
+        "",
+        "---@param object Object|nil",
+        "---@return boolean",
+        "function godot.is_instance_valid(object) end",
+        "",
+        "---@param fn fun(...):any",
+        "---@return Callable",
+        "function godot.callable(fn) end",
+        "",
+        "---@param source Object",
+        "---@param signal string",
+        "---@param fn fun(...):any",
+        "---@return boolean, integer",
+        "function godot.connect(source, signal, fn) end",
+        "",
+        "---@param x number",
+        "---@param y number",
+        "---@return Vector2",
+        "function godot.Vector2(x, y) end",
+        "",
+        "---@param x number",
+        "---@param y number",
+        "---@param z number",
+        "---@return Vector3",
+        "function godot.Vector3(x, y, z) end",
+        "",
+        "---@param r number",
+        "---@param g number",
+        "---@param b number",
+        "---@param a? number",
+        "---@return Color",
+        "function godot.Color(r, g, b, a) end",
+        "",
+        "return godot",
+        "",
+    ])
+
+
 def write_file(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -199,6 +265,8 @@ def main() -> int:
 
     godot_dir = args.out / "godot" / "classes"
     generated: List[str] = []
+    write_file(args.out / "godot" / "runtime.lua", render_runtime_stub())
+    generated.append("godot.runtime")
     for cls in classes:
         name = cls.get("name")
         if not name:

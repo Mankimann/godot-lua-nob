@@ -29,6 +29,7 @@ public:
 
     void set_path_hint(const String &p_path);
     String get_path_hint() const;
+    Error load_from_file(const String &p_path);
 
     Dictionary get_discovered_methods() const;
 
