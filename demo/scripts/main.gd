@@ -36,8 +36,18 @@ func _ready() -> void:
     print(native_instance.call_method("greet", ["Godot"]))
     print("Native LuaScript diagnostics: ", native_instance.diagnostics())
 
+    var direct_node := Node.new()
+    direct_node.name = "DirectLuaAttachedNode"
+    var direct_script := LuaScript.new()
+    direct_script.load_from_file("res://scripts/native_node.lua")
+    direct_node.set_script(direct_script)
+    direct_node.set_process(true)
+    direct_node.set_physics_process(true)
+    add_child(direct_node)
+    print("Direct Lua attach call: ", direct_node.call("greet", "DirectAttach"))
+
     var host := LuaScriptHost.new()
     host.lua_script_path = "res://scripts/native_node.lua"
     host.forward_process = false
     add_child(host)
-    print("LuaScriptHost added: ", host.name)
+    print("LuaScriptHost fallback added: ", host.name)

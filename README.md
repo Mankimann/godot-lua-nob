@@ -76,17 +76,18 @@ Zusätzlich zur expliziten `LuaState`-Nutzung registriert die GDExtension nun ei
 | Klasse | Aufgabe | Status |
 |---|---|---|
 | `LuaScriptLanguage` | Sprachmetadaten, `.lua`-Erkennung, Templates, Syntaxvalidierung per LuaJIT-Parser und Engine-Registrierung. | Implementiert als konservative `ScriptLanguageExtension`. |
-| `LuaScript` | Speichert Quellcode, erkennt Lua-Funktionen, liefert Editor-/Reflection-Metadaten und Script-Resource-Verhalten. | Mit `load_from_file(path)` direkt aus `res://` nutzbar; native C-API-`ScriptInstance`-Handle bleibt der nächste ABI-Schritt. |
+| `LuaScript` | Speichert Quellcode, erkennt Lua-Funktionen, liefert Editor-/Reflection-Metadaten und Script-Resource-Verhalten. | Mit `load_from_file(path)` direkt aus `res://` nutzbar und über `Node.set_script()` programmatisch attachbar. |
 | `LuaScriptInstance` | Führt ein Lua-Skript mit `self`/`owner` aus und dispatcht Lifecycle-Methoden explizit aus Godot. | Unterstützt `initialize_from_file`, Initial-Properties, Reload, Modulpfade, Diagnostik und `_exit_tree`. |
 
-Das Demo-Projekt enthält `demo/scripts/native_node.lua` und zeigt in `demo/scripts/main.gd`, wie eine `LuaScript`-Resource per `load_from_file` geladen und über `LuaScriptInstance.initialize_from_file` ausgeführt wird. Für den Alltag gibt es zusätzlich `demo/scripts/lua_script_host.gd`: Dieser Node lädt eine `.lua`-Datei über `@export_file`, leitet `_ready`, `_process`, `_physics_process`, `_input`, `_unhandled_input` und `_exit_tree` weiter und bietet `call_lua`, `reload_lua`, Property-Zugriff sowie Diagnostik. Damit kann ein Godot-Node schon jetzt eine Lua-Komponente verwenden, während der finale Godot-C-API-`ScriptInstance`-Descriptor separat und risikoarm ergänzt werden kann.
+Das Demo-Projekt enthält `demo/scripts/native_node.lua` und zeigt in `demo/scripts/main.gd` nun drei Nutzungswege. Der wichtigste Weg ist der direkte Attach über `node.set_script(lua_script)`: Eine `LuaScript`-Resource wird per `load_from_file` geladen, an einen Node gehängt und Godot ruft den nativen `GDExtensionScriptInstance`-Descriptor für Methoden, Properties und Lifecycle-Notifications auf. Zusätzlich bleiben `LuaScriptInstance.initialize_from_file` als expliziter Runtime-Wrapper und `demo/scripts/lua_script_host.gd` als robuster GDScript-Fallback verfügbar.
 
 ```gdscript
-var host := LuaScriptHost.new()
-host.lua_script_path = "res://scripts/native_node.lua"
-host.initial_properties = {"spawn_count": 1}
-add_child(host)
-print(host.call_lua("greet", ["Godot"]))
+var node := Node.new()
+var script := LuaScript.new()
+script.load_from_file("res://scripts/native_node.lua")
+node.set_script(script)
+add_child(node)
+print(node.call("greet", "Godot"))
 ```
 
 ## LuaJIT-API
@@ -133,7 +134,7 @@ Die Runtime unterscheidet mehrere Vertrauenszonen. Für ein großes Projekt ist 
 
 ## Demo
 
-Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` per `LuaScript.load_from_file`, initialisiert eine `LuaScriptInstance` direkt aus der Datei, ruft `_ready`, `_process` sowie eine Lua-Methode auf und gibt Diagnostik aus. Zusätzlich erzeugt sie einen `LuaScriptHost`, der dasselbe Lua-Skript als wiederverwendbare Node-Komponente lädt. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks, Lifecycle-Weiterleitung und die neue Script-Resource-Schicht.
+Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` per `LuaScript.load_from_file`, initialisiert eine `LuaScriptInstance` direkt aus der Datei, hängt dieselbe Resource per `Node.set_script()` direkt an einen Node und erzeugt danach zusätzlich den `LuaScriptHost` als Fallback-Komponente. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks, native ScriptInstance-Callbacks, Lifecycle-Weiterleitung und die neue Script-Resource-Schicht.
 
 ## Typed Lua-API-Generator
 
@@ -150,12 +151,12 @@ Die generierten Dateien sind bewusst Editor-/Tooling-Stubs. Zur Laufzeit bleibt 
 
 ## Roadmap für ein nahezu vollständiges Binding
 
-Dieses Repository ist nun deutlich über ein MVP hinaus ausgebaut und enthält eine erste `ScriptLanguageExtension`-Schicht. Der nächste große Schritt zu einem vollständig Editor-nativen Lua-Erlebnis ist der niedrige Godot-C-API-`ScriptInstance`-Descriptor, damit `.lua`-Dateien ohne expliziten Wrapper an Nodes hängen und direkt am Engine-Lifecycle teilnehmen.
+Dieses Repository ist nun deutlich über ein MVP hinaus ausgebaut und enthält eine erste `ScriptLanguageExtension`-Schicht mit nativem `GDExtensionScriptInstance`-Descriptor. Lua-Code kann damit bereits programmatisch über `LuaScript.load_from_file()` und `Node.set_script()` an Nodes gehängt werden. Der nächste große Schritt zu einem vollständig Editor-nativen Lua-Erlebnis ist ein Importer/Editor-Plugin, das `.lua`-Dateien direkt als attachbare Script-Resources im Inspector anbietet.
 
 | Priorität | Erweiterung | Nutzen |
 |---:|---|---|
-| 1 | Native C-API-`ScriptInstance`-Descriptor | Vollautomatisches Anhängen von `.lua`-Dateien an Nodes mit Engine-Lifecycle ohne GDScript-Wrapper. |
-| 2 | Projektinterner typed wrapper generator | Schnellere, typisierte Lua-Wrapper für stabile eigene Gameplay-APIs; Grundversion vorhanden. |
+| 1 | Editor-Importer und Inspector-Integration für `.lua` | `.lua`-Dateien direkt im Godot-Editor wie Scripts auswählen und an Nodes hängen. |
+| 2 | Native C-API-`ScriptInstance`-Descriptor | Grundversion vorhanden: programmatisches `Node.set_script(LuaScript)` mit Methoden, Properties und Lifecycle-Notifications. |
 | 3 | Ressourcenlimits und Timeouts | Sichere Produktion für Modding- oder Live-Scripting. |
 | 4 | Headless-Godot-Integrationstests | CI-validierte Laufzeitintegration. |
 | 5 | Editor-Diagnostics und Debugger-Adapter | Besserer Workflow für große Teams. |

@@ -4,8 +4,11 @@
 
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/godot.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+
+#include <gdextension_interface.h>
 
 namespace godot {
 
@@ -28,7 +31,250 @@ static String strip_lua_comment(const String &p_line) {
         return p_line.substr(0, comment);
     }
     return p_line;
+
 }
+
+struct LuaNativeScriptInstanceData {
+    Ref<LuaScriptInstance> wrapper;
+    Ref<LuaScript> script;
+    Object *owner = nullptr;
+};
+
+static LuaNativeScriptInstanceData *lua_native_data(GDExtensionScriptInstanceDataPtr p_instance) {
+    return reinterpret_cast<LuaNativeScriptInstanceData *>(p_instance);
+}
+
+static void lua_variant_copy_to(GDExtensionVariantPtr r_return, const Variant &p_value) {
+    internal::gdextension_interface_variant_new_copy(r_return, p_value._native_ptr());
+}
+
+static GDExtensionBool lua_script_instance_set(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionConstVariantPtr p_value) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        return false;
+    }
+    StringName name = *reinterpret_cast<const StringName *>(p_name);
+    Variant value;
+    internal::gdextension_interface_variant_new_copy(value._native_ptr(), p_value);
+    data->wrapper->set_script_property(name, value);
+    return true;
+}
+
+static GDExtensionBool lua_script_instance_get(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionVariantPtr r_ret) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        return false;
+    }
+    StringName name = *reinterpret_cast<const StringName *>(p_name);
+    Variant value = data->wrapper->get_script_property(name);
+    lua_variant_copy_to(r_ret, value);
+    return value.get_type() != Variant::NIL;
+}
+
+static const GDExtensionPropertyInfo *lua_script_instance_get_property_list(GDExtensionScriptInstanceDataPtr p_instance, uint32_t *r_count) {
+    if (r_count) {
+        *r_count = 0;
+    }
+    return nullptr;
+}
+
+static void lua_script_instance_free_property_list(GDExtensionScriptInstanceDataPtr p_instance, const GDExtensionPropertyInfo *p_list, uint32_t p_count) {
+}
+
+static GDExtensionVariantType lua_script_instance_get_property_type(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionBool *r_is_valid) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        if (r_is_valid) {
+            *r_is_valid = false;
+        }
+        return GDEXTENSION_VARIANT_TYPE_NIL;
+    }
+    StringName name = *reinterpret_cast<const StringName *>(p_name);
+    Variant value = data->wrapper->get_script_property(name);
+    bool valid = value.get_type() != Variant::NIL;
+    if (r_is_valid) {
+        *r_is_valid = valid;
+    }
+    return static_cast<GDExtensionVariantType>(value.get_type());
+}
+
+static GDExtensionBool lua_script_instance_property_can_revert(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name) {
+    return false;
+}
+
+static GDExtensionBool lua_script_instance_property_get_revert(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionVariantPtr r_ret) {
+    return false;
+}
+
+static GDExtensionObjectPtr lua_script_instance_get_owner(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    return data && data->owner ? data->owner->_owner : nullptr;
+}
+
+static void lua_script_instance_get_property_state(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionScriptInstancePropertyStateAdd p_add_func, void *p_userdata) {
+}
+
+static const GDExtensionMethodInfo *lua_script_instance_get_method_list(GDExtensionScriptInstanceDataPtr p_instance, uint32_t *r_count) {
+    if (r_count) {
+        *r_count = 0;
+    }
+    return nullptr;
+}
+
+static void lua_script_instance_free_method_list(GDExtensionScriptInstanceDataPtr p_instance, const GDExtensionMethodInfo *p_list, uint32_t p_count) {
+}
+
+static GDExtensionBool lua_script_instance_has_method(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        return false;
+    }
+    StringName name = *reinterpret_cast<const StringName *>(p_name);
+    return data->wrapper->has_method(name);
+}
+
+static GDExtensionInt lua_script_instance_get_method_argument_count(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_name, GDExtensionBool *r_is_valid) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->script.is_null()) {
+        if (r_is_valid) {
+            *r_is_valid = false;
+        }
+        return -1;
+    }
+    StringName name = *reinterpret_cast<const StringName *>(p_name);
+    Variant count = data->script->_get_script_method_argument_count(name);
+    bool valid = count.get_type() != Variant::NIL;
+    if (r_is_valid) {
+        *r_is_valid = valid;
+    }
+    return valid ? int64_t(count) : -1;
+}
+
+static void lua_script_instance_call(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionConstStringNamePtr p_method, const GDExtensionConstVariantPtr *p_args, GDExtensionInt p_argument_count, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+    if (r_error) {
+        r_error->error = GDEXTENSION_CALL_OK;
+        r_error->argument = 0;
+        r_error->expected = GDEXTENSION_VARIANT_TYPE_NIL;
+    }
+
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        if (r_error) {
+            r_error->error = GDEXTENSION_CALL_ERROR_INVALID_METHOD;
+        }
+        lua_variant_copy_to(r_return, Variant());
+        return;
+    }
+
+    StringName method = *reinterpret_cast<const StringName *>(p_method);
+    Array args;
+    for (GDExtensionInt i = 0; i < p_argument_count; i++) {
+        Variant arg;
+        internal::gdextension_interface_variant_new_copy(arg._native_ptr(), p_args[i]);
+        args.push_back(arg);
+    }
+
+    Variant ret = data->wrapper->call_method(method, args);
+    lua_variant_copy_to(r_return, ret);
+}
+
+static void lua_script_instance_notification2(GDExtensionScriptInstanceDataPtr p_instance, int32_t p_what, GDExtensionBool p_reversed) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->wrapper.is_null()) {
+        return;
+    }
+    switch (p_what) {
+        case 13: // Node::NOTIFICATION_READY
+            data->wrapper->ready_notification();
+            break;
+        case 17: // Node::NOTIFICATION_PROCESS
+            data->wrapper->process_notification(0.0);
+            break;
+        case 16: // Node::NOTIFICATION_PHYSICS_PROCESS
+            data->wrapper->physics_process_notification(0.0);
+            break;
+        case 11: // Node::NOTIFICATION_EXIT_TREE
+            data->wrapper->exit_tree_notification();
+            break;
+        default:
+            break;
+    }
+}
+
+static void lua_script_instance_to_string(GDExtensionScriptInstanceDataPtr p_instance, GDExtensionBool *r_is_valid, GDExtensionStringPtr r_out) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    String text = data && data->script.is_valid() ? String("<LuaScriptInstance:") + data->script->get_path_hint() + String(">") : String("<LuaScriptInstance>");
+    internal::gdextension_interface_string_new_with_latin1_chars(r_out, text.utf8().get_data());
+    if (r_is_valid) {
+        *r_is_valid = true;
+    }
+}
+
+static Ref<Script> lua_script_instance_get_script_ref(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (!data || data->script.is_null()) {
+        return Ref<Script>();
+    }
+    return data->script;
+}
+
+static GDExtensionObjectPtr lua_script_instance_get_script(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    return data && data->script.is_valid() ? data->script->_owner : nullptr;
+}
+
+static GDExtensionBool lua_script_instance_is_placeholder(GDExtensionScriptInstanceDataPtr p_instance) {
+    return false;
+}
+
+static void *lua_script_instance_get(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    return data && data->wrapper.is_valid() ? data->wrapper.ptr() : nullptr;
+}
+
+static GDExtensionScriptLanguagePtr lua_script_instance_get_language(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaScriptLanguage *language = LuaScriptLanguage::get_singleton();
+    return language ? language->_owner : nullptr;
+}
+
+static void lua_script_instance_free(GDExtensionScriptInstanceDataPtr p_instance) {
+    LuaNativeScriptInstanceData *data = lua_native_data(p_instance);
+    if (data) {
+        if (data->wrapper.is_valid()) {
+            data->wrapper->exit_tree_notification();
+        }
+        memdelete(data);
+    }
+}
+
+static GDExtensionScriptInstanceInfo3 lua_script_instance_info = {
+    lua_script_instance_set,
+    lua_script_instance_get,
+    lua_script_instance_get_property_list,
+    lua_script_instance_free_property_list,
+    nullptr,
+    lua_script_instance_property_can_revert,
+    lua_script_instance_property_get_revert,
+    lua_script_instance_get_owner,
+    lua_script_instance_get_property_state,
+    lua_script_instance_get_method_list,
+    lua_script_instance_free_method_list,
+    lua_script_instance_get_property_type,
+    nullptr,
+    lua_script_instance_has_method,
+    lua_script_instance_get_method_argument_count,
+    lua_script_instance_call,
+    lua_script_instance_notification2,
+    lua_script_instance_to_string,
+    nullptr,
+    nullptr,
+    lua_script_instance_get_script,
+    lua_script_instance_is_placeholder,
+    nullptr,
+    nullptr,
+    lua_script_instance_get_language,
+    lua_script_instance_free,
+};
 
 static String parse_function_name_from_line(const String &p_line) {
     String line = strip_lua_comment(p_line).strip_edges();
@@ -159,11 +405,23 @@ StringName LuaScript::_get_instance_base_type() const {
 }
 
 void *LuaScript::_instance_create(Object *p_for_object) const {
-    // GDExtension ScriptExtension::_instance_create must return an engine-owned
-    // GDExtension script-instance handle created through the low-level C API.
-    // The public LuaScriptInstance wrapper is exposed for host-controlled
-    // lifecycle dispatch while the native ScriptInstance ABI is completed.
-    return nullptr;
+    if (!p_for_object || !valid) {
+        return nullptr;
+    }
+
+    LuaNativeScriptInstanceData *data = memnew(LuaNativeScriptInstanceData);
+    data->owner = p_for_object;
+    data->script = Ref<LuaScript>(const_cast<LuaScript *>(this));
+    data->wrapper.instantiate();
+
+    Error err = data->wrapper->initialize(p_for_object, data->script);
+    if (err != OK) {
+        UtilityFunctions::push_error(String("Failed to initialize native Lua script instance: ") + String::num_int64(err));
+        memdelete(data);
+        return nullptr;
+    }
+
+    return internal::gdextension_interface_script_instance_create3(&lua_script_instance_info, data);
 }
 
 void *LuaScript::_placeholder_instance_create(Object *p_for_object) const {
@@ -171,7 +429,11 @@ void *LuaScript::_placeholder_instance_create(Object *p_for_object) const {
 }
 
 bool LuaScript::_instance_has(Object *p_object) const {
-    return false;
+    if (!p_object) {
+        return false;
+    }
+    LuaScriptLanguage *language = LuaScriptLanguage::get_singleton();
+    return language && internal::gdextension_interface_object_get_script_instance(p_object->_owner, language->_owner) != nullptr;
 }
 
 bool LuaScript::_has_source_code() const {
