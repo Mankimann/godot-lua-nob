@@ -1,54 +1,61 @@
-# Architektur: Lua-Binding für Godot 4
+# Architektur: Godot Lua Nob
 
-Dieses Dokument beschreibt die technische Zielarchitektur des Repositories. Der Kernentscheid lautet: **Godot 4 GDExtension, Lua 5.4, dynamische Variant/Object-Brücke und nob.h als primäres Build-System**.
+Dieses Dokument beschreibt die Zielarchitektur des Repositories. Der Kernentscheid lautet: **Godot 4 GDExtension, LuaJIT, dynamische Variant/Object-Brücke und nob.h als primäres Build-System**. Das Ziel ist ein performantes, wartbares und kontrollierbares Lua-System für sehr große Godot-Projekte, ohne einen Godot-Engine-Fork pflegen zu müssen.
 
-## Zielsetzung
+## Entscheidung
 
-Das Binding soll für ein sehr großes Spielprojekt geeignet sein. Deshalb ist langfristige Wartbarkeit wichtiger als ein maximal breiter statischer Wrapper in der ersten Version. Godot wird nicht geforkt; die Runtime wird als externe GDExtension geladen. Lua wird statisch eingebettet, damit das Spiel eine kontrollierte und reproduzierbare Skriptumgebung erhält.
+LuaJIT wird als primäre Runtime verwendet, weil das Projekt ausdrücklich performance-orientierte Gameplay- und Tooling-Skripte unterstützen soll. Die Entscheidung bedeutet bewusst, dass die Sprache nicht Lua 5.4 ist, sondern LuaJIT-kompatibles Lua auf Basis der Lua-5.1-Semantik mit JIT, FFI und LuaJIT-Erweiterungen. Für große Produktionen ist diese Klarheit wichtig, damit Teams keine Lua-5.4-only-Features in Gameplay-Code voraussetzen.
 
-| Ziel | Konsequenz für das Design |
-|---|---|
-| Große Codebasis | Kleine, stabile C++-Kernschicht statt massiver generierter Lua-Wrapper. |
-| Langlebige Godot-Versionen | Bindings werden aus Godots `extension_api.json` erzeugt. |
-| Modding- und Gameplay-Scripting | Mehrere Lua-States und Sandbox-Policies sind vorgesehen. |
-| CI- und Toolchain-Kontrolle | nob.h orchestriert Build-Schritte direkt und sichtbar. |
-| Portabilität | Lua 5.4 statt LuaJIT als Standard. |
+| Ebene | Wahl | Begründung |
+|---|---|---|
+| Native Integration | Godot 4 GDExtension | Native Erweiterung ohne Engine-Fork und mit offiziellen Godot-4-Bindings. |
+| C++-Schicht | godot-cpp | Offizielle C++-Abstraktion über der GDExtension-C-API. |
+| Skript-Runtime | LuaJIT | Hohe Performance, steuerbarer JIT und optionales FFI für vertrauenswürdige Skripte. |
+| Build | nob.h | Einfacher, versionierter und selbsthostender Build-Runner. |
+| API-Modell | Dynamische Brücke | Wartbarer als eine vollständig statisch generierte Lua-Spiegelung aller Godot-Klassen. |
 
 ## Laufzeitmodell
 
-`LuaState` kapselt einen `lua_State*` und wird als Godot-Klasse registriert. Jede Instanz kann isoliert konfiguriert werden. Für große Projekte ist dies besonders wichtig, weil Gameplay, Mods, Tools und Live-Daten unterschiedliche Vertrauens- und Performanceprofile haben.
+`LuaState` ist die zentrale Godot-registrierbare Klasse. Sie besitzt einen eigenen `lua_State`, öffnet LuaJIT-Bibliotheken, installiert Godot-spezifische Loader und wendet ein Runtime-Policy-Modell an. Dadurch können große Projekte mehrere Lua-States mit unterschiedlichen Rechten betreiben, beispielsweise für Gameplay, interne Tools oder Modding-nahe Skripte.
 
-Die dynamische Brücke konvertiert Lua-Werte nach Godot-`Variant` und zurück. Primitive Werte, Strings, Arrays, Dictionaries, Vektoren, Farben und Godot-Objekte sind im Fundament enthalten. Godot-Objekte werden als Lua-Userdata gespeichert, wobei nur die Godot-Instance-ID gehalten wird. Bei Zugriffen wird das Objekt über Godots ObjectDB erneut aufgelöst, damit gelöschte Objekte nicht direkt dereferenziert werden.
+| Komponente | Verantwortung |
+|---|---|
+| `LuaState` | Besitz des `lua_State`, Ausführung von Dateien/Strings, globale Variablen, JIT-Control, Diagnostics. |
+| `LuaError` | Godot-seitig transportierbares Fehlerobjekt für geschützte Lua-Aufrufe. |
+| `LuaCallable` | Brücke von Lua-Funktionen zu Godot-Callables und Signal-Callbacks. |
+| `lua_variant_bridge` | Konvertierung zwischen Lua-Werten und Godot-`Variant`, Object-Userdata, Module Loader und globale `godot`-API. |
 
-## API-Brücke
+## Build-Pipeline
 
-Die Brücke bevorzugt **dynamische Calls** über `Object::callv`. Dadurch kann Lua beliebige Godot-Methoden aufrufen, sofern ein Object-Handle vorliegt. Properties werden über `Object::get` und `Object::set` angebunden. Diese Entscheidung hält das Binding klein und stabil, auch wenn Godot-Klassen in neuen Versionen wachsen.
-
-| Godot-Konzept | Lua-Repräsentation | Status |
-|---|---|---|
-| `nil`, `bool`, `int`, `float`, `String` | Primitive Lua-Werte | Implementiert |
-| `Array` | 1-basierte Lua-Tabelle | Implementiert |
-| `Dictionary` | Key-Value-Lua-Tabelle | Implementiert |
-| `Vector2`, `Vector3`, `Color` | Konstruktorfunktionen und Tabellenrepräsentation | Implementiert |
-| `Object` | Userdata mit Metatable | Implementiert |
-| `Callable` | Lua-Funktion / Godot-Callable | Geplant |
-| Signale | Connect/Disconnect aus Lua | Geplant |
-| `RefCounted` | Starke Referenz-Policy | Geplant |
-| `ScriptLanguageExtension` | `.lua` als Godot-Skript | Geplant |
-
-## Build-Architektur
-
-`nob.c` ist der einzige primäre Build-Runner. Er baut Lua, erzeugt bei Bedarf godot-cpp-Bindings aus der `extension_api.json`, kompiliert godot-cpp und linkt anschließend die GDExtension. Die generierten Dateien unter `thirdparty/godot-cpp/gen/` werden nicht versioniert, damit die Quelle der Wahrheit die Godot-API-Datei bleibt.
+Die Build-Pipeline wird vollständig von `nob.c` gesteuert. LuaJIT wird als statische PIC-Bibliothek gebaut, godot-cpp wird aus der API-Beschreibung generiert und die finale GDExtension wird als Shared Library erzeugt.
 
 ```text
 nob.c
-  ├─ build Lua 5.4 static library
-  ├─ generate godot-cpp bindings when needed
-  ├─ build godot-cpp static library
-  ├─ build extension sources
-  └─ link demo/addons/godot_lua/bin/libgodot_lua.*
+  ├─ build LuaJIT static PIC library
+  ├─ generate godot-cpp bindings from extension_api.json
+  ├─ compile godot-cpp sources
+  ├─ compile godot-lua runtime and bindings
+  └─ link shared GDExtension library into demo/addons/godot_lua/bin
 ```
 
-## Produktionsausbau
+## Godot-Brücke
 
-Für den Einsatz in einem extrem großen Spielprojekt sollte dieses Fundament um projektinterne typed APIs ergänzt werden. Die empfohlene Strategie ist zweigleisig: Die dynamische Brücke bleibt für allgemeine Godot-Zugriffe verfügbar, während stabile Gameplay-Subsysteme zusätzliche handgeschriebene oder generierte Lua-Wrapper erhalten. So bleiben häufige Hotpath-Calls effizient, ohne die komplette Godot-API statisch nachbilden zu müssen.
+Die Brücke setzt bewusst auf Godots dynamische `Variant`- und `Object`-APIs. Lua-Tabellen werden je nach Form zu Arrays, Dictionaries, Vektoren oder Farben konvertiert. Godot-Objekte werden als Userdata gespeichert, wobei die Runtime nur die `ObjectID` hält und bei Zugriffen über `ObjectDB` prüft, ob die Instanz noch lebt.
+
+| Richtung | Verhalten |
+|---|---|
+| Godot zu Lua | Nil, Bool, Int, Float, String, Vector2/3/4, Color, PackedByteArray, Array, Dictionary und Object werden nach Lua übertragen. |
+| Lua zu Godot | Nil, Bool, Number, String, Tables und Godot-Object-Userdata werden als `Variant` gelesen. |
+| Objektzugriff | Lua `obj.foo` liest Godot-Properties; `obj.foo = value` schreibt sie. |
+| Methoden | Lua `obj:method(args...)` ruft dynamisch Godot-Methoden über `callv`. |
+| Signale | `godot.connect(object, signal, fn)` erstellt einen `LuaCallable` und verbindet ihn mit dem Godot-Signal. |
+
+## Sicherheit
+
+Die Runtime verwendet Policies statt einer einzigen globalen Sandbox. Das ist für große Produktionen entscheidend, weil unterschiedliche Skriptklassen unterschiedliche Rechte benötigen. In Gameplay- und Sandbox-Modi werden gefährliche globale Funktionen, native Loader und FFI standardmäßig deaktiviert. FFI sollte nur für vertrauenswürdige interne Skripte aktiviert werden.
+
+> LuaJIT-FFI ist mächtig und kann native Grenzen umgehen. In einem Spielprojekt sollte FFI als Engine-/Tooling-Funktion behandelt werden, nicht als Standardfähigkeit für Gameplay- oder Modding-Code.
+
+## Nächste Architektur-Stufe
+
+Die aktuelle Architektur ist eine erweiterte Runtime-Foundation. Für ein nahezu vollständiges Godot-Lua-Erlebnis sind die nächsten Schritte eine `ScriptLanguageExtension`, ein optionaler Wrapper-Generator für stabile projektinterne APIs, Headless-Godot-Integrationstests und ein Debugger-/Diagnostics-Workflow im Editor.

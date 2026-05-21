@@ -1,21 +1,21 @@
 # Godot Lua Nob
 
-**Godot Lua Nob** ist ein produktionsorientiertes Starter-Repository für ein Lua-5.4-Binding in Godot 4. Das Projekt verwendet **GDExtension**, bindet Lua statisch ein und nutzt **nob.h** als primäres, selbsthostendes Build-System. Die Architektur ist bewusst auf große Spielprojekte ausgelegt: keine Engine-Fork, kein vollständiger statischer Wrapper für jede Godot-Klasse, sondern eine wartbare dynamische Brücke über `Variant`, `Object`, Singletons und Godot-Methoden.
+**Godot Lua Nob** ist ein produktionsorientiertes Starter-Repository für ein performance-fokussiertes **LuaJIT-Binding für Godot 4**. Das Projekt verwendet **GDExtension**, bindet LuaJIT statisch als PIC-Bibliothek ein und nutzt **nob.h** als primäres, selbsthostendes Build-System. Die Architektur ist auf große Spielprojekte ausgelegt: keine Engine-Fork, kein fragiler Vollwrapper für jede Godot-Klasse, sondern eine wartbare dynamische Brücke über `Variant`, `Object`, Singletons, Callables, Signals und Godot-Methoden.
 
-> Godot 4 GDExtension ist die moderne native Erweiterungsschnittstelle für Godot, bei der externe Shared Libraries zur Laufzeit geladen werden. Für langfristige Projekte ist dieser Ansatz in der Regel wartbarer als ein eigener Engine-Fork, weil das Spiel mit offiziellen Godot-Releases aktualisiert werden kann.[1] Die C++-Bindings werden über `godot-cpp` bereitgestellt und aus der passenden `extension_api.json` generiert.[2]
+> Godot 4 GDExtension ist die moderne native Erweiterungsschnittstelle für Godot, bei der externe Shared Libraries zur Laufzeit geladen werden. Für langfristige Projekte ist dieser Ansatz meist wartbarer als ein eigener Engine-Fork, weil das Spiel mit offiziellen Godot-Releases aktualisiert werden kann.[1] Die C++-Bindings werden über `godot-cpp` bereitgestellt und aus der passenden `extension_api.json` generiert.[2]
 
 ## Architekturentscheidung
 
-Für ein sehr großes Spielprojekt ist die beste Basis **Godot 4 + GDExtension + Lua 5.4 + nob.h**. GDExtension reduziert die Wartungskosten, Lua 5.4 bleibt portabel und vorhersagbar, und nob.h hält das Build-System transparent, versionierbar und debuggbar. Eine dynamische Godot-Brücke ist in diesem Kontext robuster als ein statisch generierter Lua-Wrapper für jede Godot-Klasse, weil Godot-APIs über Minor-Versionen wachsen und sich Details ändern können.
+Für ein sehr großes, performance-kritisches Spielprojekt ist die beste Basis **Godot 4 + GDExtension + LuaJIT + nob.h**. LuaJIT ist nicht Lua 5.4, sondern primär Lua-5.1-kompatibel mit JIT, FFI und eigenen Erweiterungen.[4] Diese Wahl ist bewusst: Für Gameplay, Modding-ähnliche Systeme und datengetriebene Runtime-Logik ist die Laufzeitperformance wichtiger als die exakte Lua-5.4-Sprachsemantik. Sicherheits- und Portabilitätsrisiken werden über ein Policy-Modell abgefangen.
 
 | Bereich | Entscheidung | Begründung |
 |---|---:|---|
 | Godot-Integration | **GDExtension** | Native Performance ohne Engine-Fork und mit klarer Godot-4-Kompatibilität.[1] |
 | C++-Binding | **godot-cpp** | Offizielle C++-Schicht über der GDExtension-C-API.[2] |
-| Lua-Version | **Lua 5.4.x** | Portabler und einfacher zu sandboxen als JIT-basierte Laufzeiten. |
+| Lua-Runtime | **LuaJIT** | Hohe Ausführungsgeschwindigkeit, JIT-Control und optionales FFI für vertrauenswürdige Tooling-/Engine-Skripte.[4] |
 | Build-System | **nob.h** | Selbsthostender C-Build-Runner, der im Repository liegt und keine Generator-Magie versteckt.[3] |
 | Godot-API-Modell | **Dynamische Variant/Object-Brücke** | Besser wartbar als tausende handgeschriebene Lua-Wrapper. |
-| Projektstatus | **Foundation / MVP** | Enthält Build, Runtime, Variant-Konvertierung, Demo und CI; ScriptLanguage-Integration ist als nächste Ausbaustufe vorgesehen. |
+| Projektstatus | **Erweiterte Foundation** | Enthält LuaJIT-Build, Runtime-Policies, `require`, Variant/Object-Brücke, Callables/Signals, Demo und CI-Vorlage. |
 
 ## Repository-Struktur
 
@@ -23,20 +23,22 @@ Das Repository ist so aufgebaut, dass Gameplay-Teams die Runtime direkt ausprobi
 
 | Pfad | Zweck |
 |---|---|
-| `nob.c` | Primäres Build-System mit Lua-Build, godot-cpp-Codegenerierung, statischen Libraries und finaler GDExtension. |
-| `include/godot_lua/` | Öffentliche C++-Header für Runtime, Fehlerobjekte und Variant-Brücke. |
-| `src/runtime/` | `LuaState` und `LuaError` als Godot-registrierbare Klassen. |
-| `src/bindings/` | Konvertierung zwischen Lua-Werten und Godot-`Variant`, Objektzugriff, Singletons und Utility-Funktionen. |
-| `thirdparty/lua/` | Eingebetteter Lua-5.4-Quellcode. |
+| `nob.c` | Primäres Build-System mit LuaJIT-Build, godot-cpp-Codegenerierung, statischen Libraries und finaler GDExtension. |
+| `include/godot_lua/` | Öffentliche C++-Header für Runtime, Fehlerobjekte, Callback-Klasse und Variant-Brücke. |
+| `src/runtime/` | `LuaState`, `LuaError` und `LuaCallable` als Godot-registrierbare Klassen. |
+| `src/bindings/` | Konvertierung zwischen Lua-Werten und Godot-`Variant`, Objektzugriff, Singletons, `require` und Utility-Funktionen. |
+| `thirdparty/luajit/` | Eingebetteter LuaJIT-Quellcode. |
 | `thirdparty/godot-cpp/` | Offizielle Godot-C++-Bindings. Generierte Dateien liegen unter `thirdparty/godot-cpp/gen/` und werden nicht versioniert. |
-| `demo/` | Minimales Godot-Projekt mit `.gdextension`, Szene, GDScript und Lua-Beispiel. |
-| `.github/workflows/build.yml` | Linux-CI, die `nob` bootstrapped und die Extension baut. |
+| `demo/` | Minimales Godot-Projekt mit `.gdextension`, Szene, GDScript, LuaJIT-Skript und Lua-Modulbeispiel. |
+| `docs/ci/github-actions-build.yml` | CI-Vorlage; wegen Token-Berechtigungen nicht direkt unter `.github/workflows/` abgelegt. |
 
 ## Build
 
-Der Build ist absichtlich schlicht. Zunächst wird der Build-Runner aus `nob.c` kompiliert, anschließend übernimmt `./nob` die vollständige Pipeline. Auf einem typischen Linux-Entwicklungsrechner werden ein C-Compiler, ein C++17-Compiler, `ar` und Python 3 benötigt.
+Der Build ist absichtlich schlicht. Zunächst wird der Build-Runner aus `nob.c` kompiliert, anschließend übernimmt `./nob` die vollständige Pipeline. Auf einem typischen Linux-Entwicklungsrechner werden ein C-Compiler, ein C++17-Compiler, `make`, `ar` und Python 3 benötigt.
 
 ```bash
+git clone --recursive https://github.com/Mankimann/godot-lua-nob.git
+cd godot-lua-nob
 cc -o nob nob.c
 ./nob build debug platform=linux arch=x86_64
 ```
@@ -47,58 +49,91 @@ Für Release-Builds wird der Modus entsprechend geändert.
 ./nob build release platform=linux arch=x86_64
 ```
 
-Die erzeugte Shared Library landet unter `demo/addons/godot_lua/bin/`. Die `.gdextension`-Datei im Demo-Projekt zeigt bereits auf die üblichen Debug- und Release-Pfade. Wenn ein anderes Toolchain-Setup verwendet werden soll, können `CC`, `CXX` und `AR` überschrieben werden.
+Die erzeugte Shared Library landet unter `demo/addons/godot_lua/bin/`. Die `.gdextension`-Datei im Demo-Projekt zeigt bereits auf die üblichen Debug- und Release-Pfade. Wenn ein anderes Toolchain-Setup verwendet werden soll, können `CC`, `CXX`, `AR` und LuaJIT-Make-Variablen über die Umgebung überschrieben werden.
 
 ```bash
 CC=clang CXX=clang++ AR=llvm-ar ./nob build release
 ```
 
-## Lua API im aktuellen Fundament
+## Nutzung in Godot
 
-Die erste Version stellt eine bewusst kompakte, aber erweiterbare Runtime bereit. `LuaState` kann Code-Strings und Dateien ausführen, globale Werte setzen oder lesen und optional Sandbox-Einschränkungen aktivieren. Im Lua-Umfeld steht eine globale Tabelle `godot` bereit.
+Im aktuellen Modell erzeugt GDScript eine `LuaState`-Instanz, wählt eine Runtime-Policy, fügt Modulpfade hinzu und führt Lua-Dateien aus. Das ist absichtlich explizit, weil große Projekte meist mehrere Lua-States mit unterschiedlichen Vertrauenszonen benötigen.
+
+```gdscript
+var lua := LuaState.new()
+lua.open_with_policy(LuaState.POLICY_GAMEPLAY)
+lua.add_module_root("res://scripts")
+lua.jit_optimize("hotloop=56,hotexit=10")
+lua.set_global("godot_node", self)
+lua.do_file("res://scripts/hello.lua")
+```
+
+## LuaJIT-API
+
+Die Runtime stellt eine globale Tabelle `godot` bereit. Godot-Objekte werden in Lua als Userdata gehalten. Methodenaufrufe erfolgen dynamisch über Godots `Object::callv`; Properties werden über `Object::get` und `Object::set` angebunden. Dadurch kann dieselbe Brücke mit beliebigen Godot-Klassen arbeiten, ohne für jede Klasse eine separate Lua-Datei oder C++-Binding-Datei zu generieren.
 
 | Lua-Funktion | Beschreibung |
 |---|---|
 | `godot.print(...)` | Schreibt über Godots `UtilityFunctions::print` in die Godot-Konsole. |
+| `godot.push_warning(text)` | Schreibt eine Godot-Warnung. |
+| `godot.push_error(text)` | Schreibt einen Godot-Fehler. |
 | `godot.get_singleton(name)` | Gibt ein Godot-Singleton wie `Engine`, `Input` oder `ProjectSettings` als Lua-Objekt zurück. |
+| `godot.load_resource(path, type_hint?)` | Lädt eine Godot-Resource über `ResourceLoader`. |
 | `godot.variant_type(value)` | Liefert den Godot-Variant-Typnamen eines Lua-Werts. |
-| `Vector2(x, y)` | Erzeugt einen Godot-`Vector2` und gibt ihn nach Lua zurück. |
+| `godot.is_instance_valid(object)` | Prüft, ob ein Godot-Objekt noch gültig ist. |
+| `godot.callable(fn)` | Wandelt eine Lua-Funktion in ein Godot-`LuaCallable`-Objekt um. |
+| `godot.connect(object, signal_name, fn)` | Verbindet ein Godot-Signal mit einer Lua-Funktion und hält den Callback am Leben. |
+| `Vector2(x, y)` | Erzeugt einen Godot-`Vector2`. |
 | `Vector3(x, y, z)` | Erzeugt einen Godot-`Vector3`. |
+| `Vector4(x, y, z, w)` | Erzeugt einen Godot-`Vector4`. |
 | `Color(r, g, b, a)` | Erzeugt eine Godot-`Color`. |
 
-Godot-Objekte werden in Lua als Userdata gehalten. Methodenaufrufe erfolgen dynamisch über Godots `Object::callv`; Properties werden über `Object::get` und `Object::set` angebunden. Dadurch kann dieselbe Brücke mit beliebigen Godot-Klassen arbeiten, ohne für jede Klasse eine separate Lua-Datei oder C++-Binding-Datei zu generieren.
+## Module und `require`
 
-## Demo
+`LuaState.add_module_root("res://scripts")` registriert einen Godot-Dateisystempfad für Lua-Module. Danach kann LuaJIT Module mit Punktnotation laden. Der Loader sucht nach `<root>/<modul>.lua` und `<root>/<modul>/init.lua`.
 
-Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Das Beispiel demonstriert Godot-Ausgaben, Vektoren, Sandbox-Verhalten und Singleton-Zugriffe.
+```lua
+local math_util = require("game.math_util")
+godot.print(math_util.add(20, 22))
+```
 
-## Sicherheit und Sandbox
+## Runtime-Policies
 
-Der Sandbox-Modus entfernt im aktuellen Fundament besonders riskante Lua-Funktionen wie direkte Prozessausführung und Dateisystemzugriffe über `io` und `package`. Für ein großes Spielprojekt sollte diese Schicht später rollenbasiert erweitert werden, beispielsweise getrennt für interne Gameplay-Skripte, Modding-Skripte, Editor-Tools und Live-Ops-Konfigurationen.
+Die Runtime unterscheidet mehrere Vertrauenszonen. Für ein großes Projekt ist das wichtiger als ein globales Alles-oder-Nichts-Sandboxing, weil interne Engine-Tools andere Rechte brauchen als Modding- oder Live-Ops-Skripte.
+
+| Policy | Ziel | JIT | FFI | Bytecode | Dateisystem/Native Loadlib |
+|---|---|---:|---:|---:|---|
+| `POLICY_TRUSTED` | Interne Engine-/Tooling-Skripte | An | Optional | Optional | Kann bewusst freigegeben werden. |
+| `POLICY_GAMEPLAY` | Normale Gameplay-Skripte | An | Aus | Aus | Godot-Loader für `res://`/`user://`, kein natives `loadlib`. |
+| `POLICY_SANDBOXED` | Untrusted/Modding-nahe Skripte | Optional | Aus | Aus | Entfernt riskante `os`, `io`, `loadfile`, `dofile`-Wege. |
+| `POLICY_MODDING` | Späterer Modding-Ausbau | Projektabhängig | Aus | Aus | Sollte zusätzlich Ressourcenlimits und Pfad-Whitelists bekommen. |
 
 > Die Sandbox ist ein **Sicherheitsfundament**, kein endgültiges Sicherheitsmodell. Für Modding in Produktion müssen Pfad-Policies, Ressourcenlimits, deterministische Timeouts, Speicherbudgets und gegebenenfalls getrennte Lua-States pro Vertrauenszone ergänzt werden.
 
-## Roadmap für ein wirklich vollständiges Binding
+## Demo
 
-Dieses Repository ist als kompilierbares Fundament angelegt. Die nächsten Ausbaustufen sollten iterativ erfolgen, damit das Binding in einem großen Projekt kontrolliert wächst und nicht durch eine riesige, schwer wartbare API-Schicht blockiert wird.
+Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript und Lua-Funktionen als Signal-Callbacks.
+
+## Roadmap für ein nahezu vollständiges Binding
+
+Dieses Repository ist nun deutlich über ein MVP hinaus ausgebaut, bleibt aber bewusst als kontrollierbare Foundation angelegt. Der nächste große Schritt zu einem Editor-nativen Lua-Erlebnis wäre eine `ScriptLanguageExtension`, damit `.lua`-Dateien wie echte Godot-Skripte im Inspector und Editor erscheinen.
 
 | Priorität | Erweiterung | Nutzen |
 |---:|---|---|
-| 1 | `Callable`- und Signal-Brücke | Lua-Funktionen als Godot-Callbacks und Signal-Handler. |
-| 2 | `RefCounted`/`Resource`-Lifetime-Policies | Sichere Referenzhaltung für Ressourcen und Gameplay-Daten. |
-| 3 | `ScriptLanguageExtension` | Lua-Skripte als echte Godot-Skripte im Editor. |
-| 4 | `require` für `res://` und `user://` | Projektweite Lua-Modularisierung. |
-| 5 | Hot-Reload und Editor-Diagnostics | Schneller Iterationszyklus für Gameplay-Teams. |
-| 6 | Test-Runner für Headless-Godot | CI-validierte Integrationstests. |
-| 7 | Typed wrapper generator für projektinterne APIs | Optionale, performantere Lua-Wrapper für stabile eigene Gameplay-APIs. |
+| 1 | `ScriptLanguageExtension` | Lua-Skripte als echte Godot-Skripte im Editor. |
+| 2 | Projektinterner typed wrapper generator | Schnellere, typisierte Lua-Wrapper für stabile eigene Gameplay-APIs. |
+| 3 | Ressourcenlimits und Timeouts | Sichere Produktion für Modding- oder Live-Scripting. |
+| 4 | Headless-Godot-Integrationstests | CI-validierte Laufzeitintegration. |
+| 5 | Editor-Diagnostics und Debugger-Adapter | Besserer Workflow für große Teams. |
 
 ## Lizenzhinweis
 
-Dieses Repository enthält Third-Party-Quellen. Vor einem öffentlichen Release müssen die jeweiligen Lizenzdateien von Lua, godot-cpp und nob.h geprüft und vollständig beibehalten werden. Für dein privates Projekt ist der aktuelle Aufbau geeignet; für Distributionen sollte zusätzlich eine `THIRD_PARTY_NOTICES.md` gepflegt werden.
+Dieses Repository enthält Third-Party-Quellen. Vor einem öffentlichen Release müssen die jeweiligen Lizenzdateien von LuaJIT, godot-cpp und nob.h geprüft und vollständig beibehalten werden. Für dein privates Projekt ist der aktuelle Aufbau geeignet; für Distributionen sollte zusätzlich `THIRD_PARTY_NOTICES.md` gepflegt bleiben.
 
 ## References
 
 [1]: https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/index.html "Godot Documentation: GDExtension"
 [2]: https://github.com/godotengine/godot-cpp "godotengine/godot-cpp"
 [3]: https://github.com/tsoding/nob.h "tsoding/nob.h"
-[4]: https://github.com/gilzoide/lua-gdextension "gilzoide/lua-gdextension"
+[4]: https://luajit.org/ "LuaJIT"
+[5]: https://luajit.org/install.html "LuaJIT Installation"

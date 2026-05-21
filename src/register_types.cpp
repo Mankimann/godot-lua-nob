@@ -1,4 +1,5 @@
 #include <godot_lua/register_types.hpp>
+#include <godot_lua/lua_callable.hpp>
 #include <godot_lua/lua_error.hpp>
 #include <godot_lua/lua_state.hpp>
 
@@ -15,6 +16,7 @@ void initialize_godot_lua_module(ModuleInitializationLevel p_level) {
     }
 
     GDREGISTER_CLASS(LuaError);
+    GDREGISTER_CLASS(LuaCallable);
     GDREGISTER_CLASS(LuaState);
 }
 

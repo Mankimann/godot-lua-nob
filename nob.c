@@ -12,6 +12,9 @@
 #define GODOT_CPP_DIR "thirdparty/godot-cpp"
 #define GODOT_CPP_API GODOT_CPP_DIR "/gdextension/extension_api.json"
 #define GODOT_CPP_GEN_OBJECT GODOT_CPP_DIR "/gen/include/godot_cpp/classes/object.hpp"
+#define LUAJIT_DIR "thirdparty/luajit"
+#define LUAJIT_SRC LUAJIT_DIR "/src"
+#define LUAJIT_STATIC LUAJIT_SRC "/libluajit.a"
 
 typedef enum Build_Mode {
     MODE_DEBUG,
@@ -25,42 +28,9 @@ typedef struct Build_Config {
     const char *cxx;
     const char *cc;
     const char *ar;
+    bool luajit_lua52compat;
+    bool luajit_disable_ffi;
 } Build_Config;
-
-static const char *lua_sources[] = {
-    "thirdparty/lua/src/lapi.c",
-    "thirdparty/lua/src/lauxlib.c",
-    "thirdparty/lua/src/lbaselib.c",
-    "thirdparty/lua/src/lcode.c",
-    "thirdparty/lua/src/lcorolib.c",
-    "thirdparty/lua/src/lctype.c",
-    "thirdparty/lua/src/ldblib.c",
-    "thirdparty/lua/src/ldebug.c",
-    "thirdparty/lua/src/ldo.c",
-    "thirdparty/lua/src/ldump.c",
-    "thirdparty/lua/src/lfunc.c",
-    "thirdparty/lua/src/lgc.c",
-    "thirdparty/lua/src/linit.c",
-    "thirdparty/lua/src/liolib.c",
-    "thirdparty/lua/src/llex.c",
-    "thirdparty/lua/src/lmathlib.c",
-    "thirdparty/lua/src/lmem.c",
-    "thirdparty/lua/src/loadlib.c",
-    "thirdparty/lua/src/lobject.c",
-    "thirdparty/lua/src/lopcodes.c",
-    "thirdparty/lua/src/loslib.c",
-    "thirdparty/lua/src/lparser.c",
-    "thirdparty/lua/src/lstate.c",
-    "thirdparty/lua/src/lstring.c",
-    "thirdparty/lua/src/lstrlib.c",
-    "thirdparty/lua/src/ltable.c",
-    "thirdparty/lua/src/ltablib.c",
-    "thirdparty/lua/src/ltm.c",
-    "thirdparty/lua/src/lundump.c",
-    "thirdparty/lua/src/lutf8lib.c",
-    "thirdparty/lua/src/lvm.c",
-    "thirdparty/lua/src/lzio.c",
-};
 
 static const char *godot_cpp_core_dirs[] = {
     GODOT_CPP_DIR "/src/classes",
@@ -71,6 +41,7 @@ static const char *godot_cpp_core_dirs[] = {
 static const char *extension_sources[] = {
     "src/register_types.cpp",
     "src/runtime/lua_error.cpp",
+    "src/runtime/lua_callable.cpp",
     "src/runtime/lua_state.cpp",
     "src/bindings/lua_variant_bridge.cpp",
 };
@@ -131,11 +102,12 @@ static void add_common_cpp_flags(Nob_Cmd *cmd, Build_Config cfg) {
     nob_cmd_append(cmd,
         "-std=c++17", "-fPIC",
         "-Iinclude",
-        "-Ithirdparty/lua/src",
+        "-Ithirdparty/luajit/src",
         "-Ithirdparty/godot-cpp/include",
         "-Ithirdparty/godot-cpp/gen/include",
         "-Ithirdparty/godot-cpp/gdextension",
         "-DGDEXTENSION",
+        "-DLUAJIT_ENABLE_LUA52COMPAT",
         "-Wno-unused-parameter",
         "-Wno-missing-field-initializers");
     if (cfg.mode == MODE_DEBUG) {
@@ -145,18 +117,27 @@ static void add_common_cpp_flags(Nob_Cmd *cmd, Build_Config cfg) {
     }
 }
 
-static bool compile_c(Build_Config cfg, const char *group, const char *src, Nob_File_Paths *objects) {
-    const char *obj = object_path_for(group, src);
-    nob_da_append(objects, obj);
-    int rebuild = nob_needs_rebuild1(obj, src);
+static bool build_luajit(Build_Config cfg) {
+    int rebuild = nob_needs_rebuild1(LUAJIT_STATIC, LUAJIT_SRC "/luajit.c");
     if (rebuild < 0) return false;
     if (!rebuild) return true;
 
+    nob_log(NOB_INFO, "building optimized LuaJIT static library");
     Nob_Cmd cmd = {0};
-    nob_cmd_append(&cmd, cfg.cc, "-std=c99", "-fPIC", "-DLUA_COMPAT_5_3", "-Ithirdparty/lua/src");
-    if (cfg.mode == MODE_DEBUG) nob_cmd_append(&cmd, "-O0", "-g");
-    else nob_cmd_append(&cmd, "-O2", "-DNDEBUG");
-    nob_cmd_append(&cmd, "-c", src, "-o", obj);
+    nob_cmd_append(&cmd,
+        "make", "-C", LUAJIT_SRC,
+        "BUILDMODE=static",
+        nob_temp_sprintf("CC=%s", cfg.cc),
+        nob_temp_sprintf("HOST_CC=%s", cfg.cc),
+        nob_temp_sprintf("STATIC_CC=%s -fPIC", cfg.cc),
+        nob_temp_sprintf("DYNAMIC_CC=%s -fPIC", cfg.cc),
+        "TARGET_CFLAGS=-fPIC",
+        cfg.mode == MODE_DEBUG ? "CCDEBUG=-g" : "CCDEBUG=",
+        cfg.mode == MODE_DEBUG ? "CCOPT=-O0 -fomit-frame-pointer" : "CCOPT=-O2 -fomit-frame-pointer",
+        cfg.luajit_lua52compat ? "XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT" : "XCFLAGS=");
+    if (cfg.luajit_disable_ffi) {
+        nob_cmd_append(&cmd, "XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT -DLUAJIT_DISABLE_FFI");
+    }
     return nob_cmd_run(&cmd);
 }
 
@@ -196,11 +177,11 @@ static const char *shared_library_path(Build_Config cfg) {
     return nob_temp_sprintf(OUT_DIR "/libgodot_lua.%s.%s.%s.so", cfg.platform, kind, cfg.arch);
 }
 
-static bool link_extension(Build_Config cfg, Nob_File_Paths extension_objects, const char *godotcpp, const char *lua) {
+static bool link_extension(Build_Config cfg, Nob_File_Paths extension_objects, const char *godotcpp, const char *luajit) {
     Nob_File_Paths deps = {0};
     for (size_t i = 0; i < extension_objects.count; ++i) nob_da_append(&deps, extension_objects.items[i]);
     nob_da_append(&deps, godotcpp);
-    nob_da_append(&deps, lua);
+    nob_da_append(&deps, luajit);
 
     const char *out = shared_library_path(cfg);
     int rebuild = nob_needs_rebuild(out, deps.items, deps.count);
@@ -210,9 +191,11 @@ static bool link_extension(Build_Config cfg, Nob_File_Paths extension_objects, c
     Nob_Cmd cmd = {0};
     nob_cmd_append(&cmd, cfg.cxx, "-shared", "-o", out);
     for (size_t i = 0; i < extension_objects.count; ++i) nob_cmd_append(&cmd, extension_objects.items[i]);
-    nob_cmd_append(&cmd, godotcpp, lua);
+    nob_cmd_append(&cmd, godotcpp, luajit);
     if (strcmp(cfg.platform, "linux") == 0) {
         nob_cmd_append(&cmd, "-ldl", "-lm", "-pthread");
+    } else if (strcmp(cfg.platform, "macos") == 0) {
+        nob_cmd_append(&cmd, "-pagezero_size", "10000", "-image_base", "100000000");
     }
     return nob_cmd_run(&cmd);
 }
@@ -220,13 +203,7 @@ static bool link_extension(Build_Config cfg, Nob_File_Paths extension_objects, c
 static bool build_all(Build_Config cfg) {
     ensure_dirs();
     if (!ensure_godot_cpp_bindings()) return false;
-
-    Nob_File_Paths lua_objects = {0};
-    for (size_t i = 0; i < NOB_ARRAY_LEN(lua_sources); ++i) {
-        if (!compile_c(cfg, "lua", lua_sources[i], &lua_objects)) return false;
-    }
-    const char *lua_lib = LIB_DIR "/liblua54.a";
-    if (!archive_static(cfg, lua_lib, lua_objects)) return false;
+    if (!build_luajit(cfg)) return false;
 
     Nob_File_Paths godotcpp_sources = {0};
     for (size_t i = 0; i < NOB_ARRAY_LEN(godot_cpp_core_dirs); ++i) {
@@ -246,7 +223,7 @@ static bool build_all(Build_Config cfg) {
         if (!compile_cpp(cfg, "extension", extension_sources[i], &extension_objects)) return false;
     }
 
-    if (!link_extension(cfg, extension_objects, godotcpp_lib, lua_lib)) return false;
+    if (!link_extension(cfg, extension_objects, godotcpp_lib, LUAJIT_STATIC)) return false;
     nob_log(NOB_INFO, "built %s", shared_library_path(cfg));
     return true;
 }
@@ -258,11 +235,15 @@ static bool clean(void) {
 #else
     nob_cmd_append(&cmd, "rm", "-rf", BUILD_DIR);
 #endif
-    return nob_cmd_run(&cmd);
+    if (!nob_cmd_run(&cmd)) return false;
+
+    Nob_Cmd lua = {0};
+    nob_cmd_append(&lua, "make", "-C", LUAJIT_SRC, "clean");
+    return nob_cmd_run(&lua);
 }
 
 static void usage(const char *program) {
-    nob_log(NOB_INFO, "Usage: %s [build|clean] [debug|release] [platform=linux|macos|windows] [arch=x86_64|arm64]", program);
+    nob_log(NOB_INFO, "Usage: %s [build|clean] [debug|release] [platform=linux|macos|windows] [arch=x86_64|arm64] [luajit-no-lua52compat] [luajit-disable-ffi]", program);
     nob_log(NOB_INFO, "Environment: CC, CXX and AR override the compiler toolchain. Example: CXX='zig c++' CC='zig cc' ./nob build release");
 }
 
@@ -277,6 +258,8 @@ int main(int argc, char **argv) {
         .cxx = getenv("CXX") ? getenv("CXX") : "c++",
         .cc = getenv("CC") ? getenv("CC") : "cc",
         .ar = getenv("AR") ? getenv("AR") : "ar",
+        .luajit_lua52compat = true,
+        .luajit_disable_ffi = false,
     };
     const char *command = argc > 0 ? nob_shift(argv, argc) : "build";
 
@@ -286,6 +269,8 @@ int main(int argc, char **argv) {
         else if (strcmp(arg, "release") == 0) cfg.mode = MODE_RELEASE;
         else if (strncmp(arg, "platform=", 9) == 0) cfg.platform = arg + 9;
         else if (strncmp(arg, "arch=", 5) == 0) cfg.arch = arg + 5;
+        else if (strcmp(arg, "luajit-no-lua52compat") == 0) cfg.luajit_lua52compat = false;
+        else if (strcmp(arg, "luajit-disable-ffi") == 0) cfg.luajit_disable_ffi = true;
         else {
             usage(program);
             nob_log(NOB_ERROR, "unknown argument: %s", arg);
@@ -293,12 +278,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (strcmp(command, "build") == 0) {
-        return build_all(cfg) ? 0 : 1;
-    }
-    if (strcmp(command, "clean") == 0) {
-        return clean() ? 0 : 1;
-    }
+    if (strcmp(command, "build") == 0) return build_all(cfg) ? 0 : 1;
+    if (strcmp(command, "clean") == 0) return clean() ? 0 : 1;
     usage(program);
     nob_log(NOB_ERROR, "unknown command: %s", command);
     return 1;
