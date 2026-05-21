@@ -21,3 +21,18 @@ func _ready() -> void:
     print("Lua signal connection: ", connected)
 
     print("Lua diagnostics: ", lua.diagnostics())
+
+    var native_script := LuaScript.new()
+    native_script.set_path_hint("res://scripts/native_node.lua")
+    native_script.set_source_code(FileAccess.get_file_as_string("res://scripts/native_node.lua"))
+    native_script.reload(false)
+
+    var native_instance := LuaScriptInstance.new()
+    var err := native_instance.initialize(self, native_script)
+    if err != OK:
+        push_error("LuaScriptInstance initialization failed: %s" % err)
+        return
+
+    native_instance.ready_notification()
+    print(native_instance.call_method("greet", ["Godot"]))
+    print("Native LuaScript methods: ", native_script.get_discovered_methods())

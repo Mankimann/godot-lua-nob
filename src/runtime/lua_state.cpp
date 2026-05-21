@@ -209,7 +209,7 @@ Variant LuaState::make_error(int p_status, const String &p_prefix) const {
     err.instantiate();
     err->set_status(p_status);
     String message = L ? lua_bridge::read_lua_error(L, -1) : String("LuaJIT state is closed");
-    if (!p_prefix.is_empty()) message = p_prefix + ": " + message;
+    if (!p_prefix.is_empty()) message = p_prefix + String(": ") + message;
     err->set_message(message);
     err->set_traceback(message);
     if (L && lua_gettop(L) > 0) lua_pop(L, 1);
@@ -269,7 +269,9 @@ Variant LuaState::do_file(const String &p_path) {
     }
     String source = FileAccess::get_file_as_string(p_path);
     Variant result = do_string(source, p_path);
-    if (!result.is_ref_counted()) loaded_files[p_path] = FileAccess::get_modified_time(p_path);
+    if (result.get_type() != Variant::OBJECT || Object::cast_to<LuaError>(result) == nullptr) {
+        loaded_files[p_path] = FileAccess::get_modified_time(p_path);
+    }
     return result;
 }
 

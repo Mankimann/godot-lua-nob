@@ -44,6 +44,9 @@ static const char *extension_sources[] = {
     "src/runtime/lua_callable.cpp",
     "src/runtime/lua_state.cpp",
     "src/bindings/lua_variant_bridge.cpp",
+    "src/script/lua_script_language.cpp",
+    "src/script/lua_script.cpp",
+    "src/script/lua_script_instance.cpp",
 };
 
 static bool ends_with(const char *s, const char *suffix) {
