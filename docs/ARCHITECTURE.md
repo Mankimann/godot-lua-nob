@@ -28,7 +28,7 @@ LuaJIT wird als primäre Runtime verwendet, weil das Projekt ausdrücklich perfo
 | `LuaScript` | Godot-`Script`-Resource für Lua-Quellcode, Datei-Loading, Methodenerkennung, Metadaten und native ScriptInstance-Erzeugung. |
 | `LuaScriptInstance` | Runtime-Wrapper und interne Nutzlast für Owner-Objekt, LuaState, Initial-Properties, Reload, Diagnostik und Lifecycle-Dispatch. |
 | `LuaScriptHost` | GDScript-Node-Brücke als robuster Fallback und Inspector-freundlicher Host für Lua-Komponenten. |
-| `godot_lua_editor` | Demo-Editor-Plugin für `.lua`-Import und Menü-basierten Attach an ausgewählte Nodes. |
+| `godot_lua_editor` | Demo-Editor-Plugin für `.lua`-Import, Inspector-nahen Lua-Script-Slot und Menü-basierten Attach an ausgewählte Nodes. |
 
 ## Build-Pipeline
 
@@ -45,7 +45,7 @@ nob.c
 
 ## ScriptLanguageExtension-Schicht
 
-Die erste editornahe Schicht registriert `LuaScriptLanguage` über `Engine::register_script_language()` als Godot-Skriptsprache für die Endung `.lua`. `LuaScript` speichert und analysiert Quellcode als `ScriptExtension`-Resource, kann Dateien direkt per `load_from_file(path)` laden und erzeugt über die Godot-C-API einen nativen `GDExtensionScriptInstance`-Descriptor. `LuaScriptInstance` kapselt die kontrollierte Ausführung gegen ein Besitzerobjekt, setzt `self` und `owner`, übernimmt Initial-Properties, leitet den Skriptordner als Modul-Root ab und ruft Lifecycle-Funktionen wie `_ready`, `_process`, `_physics_process`, `_input`, `_unhandled_input` und `_exit_tree` über die bestehende `LuaState`-API auf. Beim direkten `Node.set_script(LuaScript)` verwendet der native Descriptor diesen Wrapper intern als private Nutzlast. Das Demo-Editor-Plugin `godot_lua_editor` ergänzt diesen Pfad um einen `.lua`-Importer und eine UndoRedo-fähige Menüaktion für ausgewählte Nodes.
+Die erste editornahe Schicht registriert `LuaScriptLanguage` über `Engine::register_script_language()` als Godot-Skriptsprache für die Endung `.lua`. `LuaScript` speichert und analysiert Quellcode als `ScriptExtension`-Resource, kann Dateien direkt per `load_from_file(path)` laden und erzeugt über die Godot-C-API einen nativen `GDExtensionScriptInstance`-Descriptor. `LuaScriptInstance` kapselt die kontrollierte Ausführung gegen ein Besitzerobjekt, setzt `self` und `owner`, übernimmt Initial-Properties, leitet den Skriptordner als Modul-Root ab und ruft Lifecycle-Funktionen wie `_ready`, `_process`, `_physics_process`, `_input`, `_unhandled_input` und `_exit_tree` über die bestehende `LuaState`-API auf. Beim direkten `Node.set_script(LuaScript)` verwendet der native Descriptor diesen Wrapper intern als private Nutzlast. Das Demo-Editor-Plugin `godot_lua_editor` ergänzt diesen Pfad um einen `.lua`-Importer, eine UndoRedo-fähige Menüaktion für ausgewählte Nodes und einen Inspector-nahen **Lua Script**-Slot mit Browse-, Attach-, Reload- und Clear-Aktionen.
 
 | Ebene | Umsetzung | Produktionsnotiz |
 |---|---|---|
@@ -53,7 +53,7 @@ Die erste editornahe Schicht registriert `LuaScriptLanguage` über `Engine::regi
 | Script-Resource | `LuaScript : ScriptExtension` | Quellcode, Pfadhinweis, Datei-Loading, einfache Funktionsanalyse, Reflection-Listen und `_instance_create()` mit `GDExtensionScriptInstanceInfo3` sind implementiert. |
 | Runtime-Instanz | `LuaScriptInstance : RefCounted` | Expliziter Dispatch-, Reload- und Diagnostikpfad; zusätzlich interne Nutzlast des nativen ScriptInstance-Descriptors. |
 | Host-Brücke | `demo/scripts/lua_script_host.gd` | Wiederverwendbarer Node-Wrapper als robuster Fallback, wenn ein Projekt Lua bewusst über einen GDScript-Host steuern will. |
-| Editor-Plugin | `demo/addons/godot_lua_editor` | Importiert `.lua` als `LuaScript` und hängt ausgewählte Nodes über den nativen `set_script`-Pfad an. |
+| Editor-Plugin | `demo/addons/godot_lua_editor` | Importiert `.lua` als `LuaScript`, ergänzt Node-Inspektoren um einen Lua-Script-Slot und hängt ausgewählte Nodes über den nativen `set_script`-Pfad an. |
 | Typisierte Tooling-API | `tools/generate_api_wrappers.py` | Erzeugt EmmyLua/LuaLS-Stubs aus `extension_api.json`, Projektklassen und Runtime-Helfern, ohne die Runtime-Brücke zu ersetzen. |
 
 ## Godot-Brücke
@@ -76,4 +76,4 @@ Die Runtime verwendet Policies statt einer einzigen globalen Sandbox. Das ist f�
 
 ## Nächste Architektur-Stufe
 
-Die aktuelle Architektur ist eine erweiterte Runtime-Foundation mit `ScriptLanguageExtension`-Integration, nativem Node-Attach, Demo-Editor-Plugin, praktischer Host-Brücke und Typed-API-Generator. Für ein nahezu vollständiges Godot-Lua-Erlebnis sind die nächsten Schritte tiefere normale Inspector-Script-Slot-Integration, Headless-Godot-Integrationstests, Ressourcenlimits und ein Debugger-/Diagnostics-Workflow im Editor.
+Die aktuelle Architektur ist eine erweiterte Runtime-Foundation mit `ScriptLanguageExtension`-Integration, nativem Node-Attach, Inspector-nahem Demo-Editor-Plugin, praktischer Host-Brücke und Typed-API-Generator. Für ein nahezu vollständiges Godot-Lua-Erlebnis sind die nächsten Schritte Integration in Godots originalen Script-Resource-Picker, Headless-Godot-Integrationstests, Ressourcenlimits und ein Debugger-/Diagnostics-Workflow im Editor.

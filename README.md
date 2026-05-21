@@ -79,7 +79,7 @@ Zusätzlich zur expliziten `LuaState`-Nutzung registriert die GDExtension nun ei
 | `LuaScript` | Speichert Quellcode, erkennt Lua-Funktionen, liefert Editor-/Reflection-Metadaten und Script-Resource-Verhalten. | Mit `load_from_file(path)` direkt aus `res://` nutzbar und über `Node.set_script()` programmatisch attachbar. |
 | `LuaScriptInstance` | Führt ein Lua-Skript mit `self`/`owner` aus und dispatcht Lifecycle-Methoden explizit aus Godot. | Unterstützt `initialize_from_file`, Initial-Properties, Reload, Modulpfade, Diagnostik und `_exit_tree`. |
 
-Das Demo-Projekt enthält `demo/scripts/native_node.lua`, `demo/scripts/main.gd` und ein aktiviertes Editor-Plugin unter `demo/addons/godot_lua_editor`. Der wichtigste Weg ist nun der Editor-Workflow: Über **Project > Tools > Attach Lua Script to Selected Node...** wird eine `.lua`-Datei ausgewählt, als `LuaScript` geladen und per UndoRedo an die aktuell ausgewählten Nodes gehängt. Programmatisch bleibt derselbe direkte Attach über `node.set_script(lua_script)` verfügbar. Zusätzlich bleiben `LuaScriptInstance.initialize_from_file` als expliziter Runtime-Wrapper und `demo/scripts/lua_script_host.gd` als robuster GDScript-Fallback erhalten.
+Das Demo-Projekt enthält `demo/scripts/native_node.lua`, `demo/scripts/main.gd` und ein aktiviertes Editor-Plugin unter `demo/addons/godot_lua_editor`. Der wichtigste Weg ist nun der Inspector-nahe Editor-Workflow: Sobald ein Node ausgewählt ist, zeigt der Inspector einen zusätzlichen **Lua Script**-Bereich mit Dateifeld, Browse-Dialog, **Attach**, **Reload** und **Clear**. Die ältere Menüaktion **Project > Tools > Attach Lua Script to Selected Node...** bleibt als Mehrfachauswahl-Workflow erhalten. Beide Wege laden eine `.lua`-Datei als `LuaScript` und hängen sie per UndoRedo über den nativen `set_script`-Pfad an den Node. Programmatisch bleibt derselbe direkte Attach über `node.set_script(lua_script)` verfügbar. Zusätzlich bleiben `LuaScriptInstance.initialize_from_file` als expliziter Runtime-Wrapper und `demo/scripts/lua_script_host.gd` als robuster GDScript-Fallback erhalten.
 
 ```gdscript
 var node := Node.new()
@@ -92,12 +92,14 @@ print(node.call("greet", "Godot"))
 
 ## Editor-Plugin-Workflow
 
-Das Demo-Projekt aktiviert `res://addons/godot_lua_editor/plugin.cfg`. Das Plugin registriert einen `EditorImportPlugin` für `.lua`-Dateien und ergänzt im Godot-Editor den Menüpunkt **Project > Tools > Attach Lua Script to Selected Node...**. Der Menüpunkt erwartet mindestens einen ausgewählten Node, öffnet einen Lua-Dateidialog und führt anschließend eine UndoRedo-fähige `set_script(LuaScript)`-Aktion aus. Dadurch lassen sich Lua-Dateien im Editor an Nodes hängen, ohne selbst GDScript-Boilerplate zu schreiben.
+Das Demo-Projekt aktiviert `res://addons/godot_lua_editor/plugin.cfg`. Das Plugin registriert einen `EditorImportPlugin` für `.lua`-Dateien, ergänzt im Inspector für Node-Objekte einen eigenen **Lua Script**-Slot und behält zusätzlich den Menüpunkt **Project > Tools > Attach Lua Script to Selected Node...**. Der Inspector-Slot ist der bevorzugte Einzel-Node-Workflow: Datei auswählen, **Attach** drücken, bei Bedarf **Reload** oder **Clear** verwenden. Die Menüaktion erwartet mindestens einen ausgewählten Node, öffnet einen Lua-Dateidialog und führt anschließend dieselbe UndoRedo-fähige `set_script(LuaScript)`-Aktion aus. Dadurch lassen sich Lua-Dateien im Editor an Nodes hängen, ohne selbst GDScript-Boilerplate zu schreiben.
 
 | Datei | Aufgabe |
 |---|---|
 | `demo/addons/godot_lua_editor/plugin.cfg` | Godot-Plugin-Metadaten. |
-| `demo/addons/godot_lua_editor/plugin.gd` | Editor-Menü, Dateidialog, Node-Auswahl und UndoRedo-Attach. |
+| `demo/addons/godot_lua_editor/plugin.gd` | Editor-Menü, Dateidialog, Importer- und InspectorPlugin-Registrierung. |
+| `demo/addons/godot_lua_editor/lua_script_inspector_plugin.gd` | Fügt Node-Objekten einen Inspector-nahen Lua-Script-Slot hinzu. |
+| `demo/addons/godot_lua_editor/lua_script_slot.gd` | UI für Pfadwahl, Attach, Reload, Clear, Status und UndoRedo-Integration. |
 | `demo/addons/godot_lua_editor/lua_script_importer.gd` | Importiert `.lua` als `LuaScript`-Resource mit `.tres`-Cache. |
 
 ## LuaJIT-API
@@ -144,7 +146,7 @@ Die Runtime unterscheidet mehrere Vertrauenszonen. Für ein großes Projekt ist 
 
 ## Demo
 
-Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` per `LuaScript.load_from_file`, initialisiert eine `LuaScriptInstance` direkt aus der Datei, hängt dieselbe Resource per `Node.set_script()` direkt an einen Node und erzeugt danach zusätzlich den `LuaScriptHost` als Fallback-Komponente. Das aktivierte Editor-Plugin ergänzt denselben Attach-Workflow über das Godot-Menü, damit ausgewählte Nodes ohne Demo-Code mit `.lua`-Dateien verbunden werden können. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks, native ScriptInstance-Callbacks, Lifecycle-Weiterleitung, Editor-Attach und die neue Script-Resource-Schicht.
+Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordner in Godot 4 geöffnet werden. Die Szene `demo/scenes/main.tscn` startet `demo/scripts/main.gd`, erzeugt zuerst eine `LuaState`-Instanz und führt `demo/scripts/hello.lua` aus. Anschließend lädt die Demo `demo/scripts/native_node.lua` per `LuaScript.load_from_file`, initialisiert eine `LuaScriptInstance` direkt aus der Datei, hängt dieselbe Resource per `Node.set_script()` direkt an einen Node und erzeugt danach zusätzlich den `LuaScriptHost` als Fallback-Komponente. Das aktivierte Editor-Plugin ergänzt denselben Attach-Workflow über den neuen Inspector-Bereich **Lua Script** und über das Godot-Menü, damit ausgewählte Nodes ohne Demo-Code mit `.lua`-Dateien verbunden werden können. Das Beispiel demonstriert LuaJIT, `require`, Godot-Singletons, Variant-Konvertierung, globale Funktionsaufrufe aus GDScript, Lua-Funktionen als Signal-Callbacks, native ScriptInstance-Callbacks, Lifecycle-Weiterleitung, Editor-Attach und die neue Script-Resource-Schicht.
 
 ## Typed Lua-API-Generator
 
@@ -161,11 +163,11 @@ Die generierten Dateien sind bewusst Editor-/Tooling-Stubs. Zur Laufzeit bleibt 
 
 ## Roadmap für ein nahezu vollständiges Binding
 
-Dieses Repository ist nun deutlich über ein MVP hinaus ausgebaut und enthält eine erste `ScriptLanguageExtension`-Schicht mit nativem `GDExtensionScriptInstance`-Descriptor sowie ein Editor-Plugin für `.lua`-Import und Menü-basiertes Attach an ausgewählte Nodes. Lua-Code kann damit im Editor und programmatisch über `LuaScript.load_from_file()` und `Node.set_script()` an Nodes gehängt werden. Der nächste große Schritt zu einem vollständig Editor-nativen Lua-Erlebnis ist tiefere Inspector-Integration, sodass `.lua` direkt im normalen Script-Slot ausgewählt werden kann.
+Dieses Repository ist nun deutlich über ein MVP hinaus ausgebaut und enthält eine erste `ScriptLanguageExtension`-Schicht mit nativem `GDExtensionScriptInstance`-Descriptor sowie ein Editor-Plugin für `.lua`-Import, Inspector-nahes Attach und Menü-basiertes Attach an ausgewählte Nodes. Lua-Code kann damit im Editor und programmatisch über `LuaScript.load_from_file()` und `Node.set_script()` an Nodes gehängt werden. Der nächste große Schritt zu einem vollständig Editor-nativen Lua-Erlebnis ist die Integration in Godots eingebauten Script-Resource-Picker selbst, damit `.lua` nicht nur über den zusätzlichen Lua-Bereich, sondern im originalen Script-Feld erscheint.
 
 | Priorität | Erweiterung | Nutzen |
 |---:|---|---|
-| 1 | Inspector-Script-Slot-Integration für `.lua` | Aktuell vorhanden: Importer plus Menü-Attach; nächster Schritt ist direkte Auswahl im normalen Script-Feld. |
+| 1 | Originaler Script-Resource-Picker für `.lua` | Aktuell vorhanden: eigener Inspector-Lua-Slot plus Importer und Menü-Attach; nächster Schritt ist direkte Anzeige im eingebauten Godot-Script-Feld. |
 | 2 | Native C-API-`ScriptInstance`-Descriptor | Grundversion vorhanden: `Node.set_script(LuaScript)` mit Methoden, Properties und Lifecycle-Notifications. |
 | 3 | Ressourcenlimits und Timeouts | Sichere Produktion für Modding- oder Live-Scripting. |
 | 4 | Headless-Godot-Integrationstests | CI-validierte Laufzeitintegration. |

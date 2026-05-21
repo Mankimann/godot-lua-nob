@@ -2,10 +2,12 @@
 extends EditorPlugin
 
 const LuaScriptImporter = preload("res://addons/godot_lua_editor/lua_script_importer.gd")
+const LuaScriptInspectorPlugin = preload("res://addons/godot_lua_editor/lua_script_inspector_plugin.gd")
 
 const MENU_ATTACH_LUA_SCRIPT := "Attach Lua Script to Selected Node..."
 
 var _importer: EditorImportPlugin
+var _inspector_plugin: EditorInspectorPlugin
 var _file_dialog: EditorFileDialog
 var _pending_nodes: Array[Node] = []
 
@@ -13,6 +15,10 @@ var _pending_nodes: Array[Node] = []
 func _enter_tree() -> void:
     _importer = LuaScriptImporter.new()
     add_import_plugin(_importer)
+
+    _inspector_plugin = LuaScriptInspectorPlugin.new()
+    _inspector_plugin.setup(self)
+    add_inspector_plugin(_inspector_plugin)
 
     add_tool_menu_item(MENU_ATTACH_LUA_SCRIPT, _show_attach_dialog)
 
@@ -27,6 +33,10 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
     remove_tool_menu_item(MENU_ATTACH_LUA_SCRIPT)
+
+    if _inspector_plugin != null:
+        remove_inspector_plugin(_inspector_plugin)
+        _inspector_plugin = null
 
     if _importer != null:
         remove_import_plugin(_importer)
