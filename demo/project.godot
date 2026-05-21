@@ -1,12 +1,12 @@
 ; Engine configuration file.
-; This demo targets Godot 4.5+.
+; This demo targets Godot 4.2+.
 
 config_version=5
 
 [application]
 config/name="Godot Lua Nob Demo"
 run/main_scene="res://scenes/main.tscn"
-config/features=PackedStringArray("4.5", "GDExtension")
+config/features=PackedStringArray("4.2", "GDExtension")
 
 [editor_plugins]
 enabled=PackedStringArray("res://addons/godot_lua_editor/plugin.cfg")

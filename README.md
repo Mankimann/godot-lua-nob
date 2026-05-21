@@ -50,7 +50,14 @@ Für Release-Builds wird der Modus entsprechend geändert.
 ./nob build release platform=linux arch=x86_64
 ```
 
-Die erzeugte Shared Library landet unter `demo/addons/godot_lua/bin/`. Die `.gdextension`-Datei im Demo-Projekt zeigt bereits auf die üblichen Debug- und Release-Pfade. Wenn ein anderes Toolchain-Setup verwendet werden soll, können `CC`, `CXX`, `AR` und LuaJIT-Make-Variablen über die Umgebung überschrieben werden.
+Die erzeugte Shared Library landet unter `demo/addons/godot_lua/bin/`. Die `.gdextension`-Datei im Demo-Projekt zeigt bereits auf die üblichen Debug- und Release-Pfade. Der Build-Runner nutzt standardmäßig die ermittelte CPU-Kernzahl, kann aber explizit mit `-jN`, `jobs=N` oder `NOB_JOBS=N` begrenzt beziehungsweise erhöht werden.
+
+```bash
+./nob build debug platform=linux arch=x86_64 -j8
+NOB_JOBS=8 ./nob build release platform=linux arch=x86_64
+```
+
+Wenn ein anderes Toolchain-Setup verwendet werden soll, können `CC`, `CXX`, `AR` und LuaJIT-Make-Variablen über die Umgebung überschrieben werden.
 
 ```bash
 CC=clang CXX=clang++ AR=llvm-ar ./nob build release
@@ -153,7 +160,7 @@ Das Demo-Projekt liegt in `demo/`. Nach einem erfolgreichen Build kann der Ordne
 Für große Projekte enthält `tools/generate_api_wrappers.py` einen Generator für typisierte Lua-Stubs. Er liest eine Godot-`extension_api.json`, erzeugt EmmyLua/LuaLS-kompatible Klassenmodule, schreibt nun auch `godot/runtime.lua` für die globalen Lua-Helfer und kann zusätzlich ein Projektverzeichnis nach `class_name`-GDScript-Dateien sowie nach Lua-Dateien mit `---@class`-Annotationen scannen.
 
 ```bash
-python3.11 tools/generate_api_wrappers.py \
+python3 tools/generate_api_wrappers.py \
   --api /path/to/extension_api.json \
   --project demo \
   --out generated/lua_api

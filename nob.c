@@ -4,6 +4,9 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #define BUILD_DIR "build"
 #define OBJ_DIR "build/obj"
@@ -30,6 +33,7 @@ typedef struct Build_Config {
     const char *ar;
     bool luajit_lua52compat;
     bool luajit_disable_ffi;
+    size_t jobs;
 } Build_Config;
 
 static const char *godot_cpp_core_dirs[] = {
@@ -48,6 +52,28 @@ static const char *extension_sources[] = {
     "src/script/lua_script.cpp",
     "src/script/lua_script_instance.cpp",
 };
+
+static size_t parse_jobs_value(const char *value) {
+    if (value == NULL || *value == '\0') return 0;
+
+    char *end = NULL;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (end == value || *end != '\0' || parsed == 0) return 0;
+    return (size_t)parsed;
+}
+
+static size_t default_job_count(void) {
+    size_t env_jobs = parse_jobs_value(getenv("NOB_JOBS"));
+    if (env_jobs > 0) return env_jobs;
+
+#ifdef _WIN32
+    size_t windows_jobs = parse_jobs_value(getenv("NUMBER_OF_PROCESSORS"));
+    return windows_jobs > 0 ? windows_jobs : 1;
+#else
+    long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+    return cpus > 0 ? (size_t)cpus : 1;
+#endif
+}
 
 static bool ends_with(const char *s, const char *suffix) {
     size_t a = strlen(s), b = strlen(suffix);
@@ -88,7 +114,7 @@ static bool ensure_godot_cpp_bindings(void) {
 
     nob_log(NOB_INFO, "generating godot-cpp bindings from %s", GODOT_CPP_API);
     Nob_Cmd cmd = {0};
-    nob_cmd_append(&cmd, "python3.11", "tools/generate_godot_cpp.py");
+    nob_cmd_append(&cmd, "python3", "tools/generate_godot_cpp.py");
     return nob_cmd_run(&cmd);
 }
 
@@ -129,6 +155,7 @@ static bool build_luajit(Build_Config cfg) {
     Nob_Cmd cmd = {0};
     nob_cmd_append(&cmd,
         "make", "-C", LUAJIT_SRC,
+        nob_temp_sprintf("-j%zu", cfg.jobs),
         "BUILDMODE=static",
         nob_temp_sprintf("CC=%s", cfg.cc),
         nob_temp_sprintf("HOST_CC=%s", cfg.cc),
@@ -144,18 +171,38 @@ static bool build_luajit(Build_Config cfg) {
     return nob_cmd_run(&cmd);
 }
 
-static bool compile_cpp(Build_Config cfg, const char *group, const char *src, Nob_File_Paths *objects) {
+static Nob_Cmd compile_cpp_command(Build_Config cfg, const char *src, const char *obj) {
+    Nob_Cmd cmd = {0};
+    nob_cmd_append(&cmd, cfg.cxx);
+    add_common_cpp_flags(&cmd, cfg);
+    nob_cmd_append(&cmd, "-c", src, "-o", obj);
+    return cmd;
+}
+
+static bool compile_cpp_async(Build_Config cfg, const char *group, const char *src, Nob_File_Paths *objects, Nob_Procs *procs) {
     const char *obj = object_path_for(group, src);
     nob_da_append(objects, obj);
     int rebuild = nob_needs_rebuild1(obj, src);
     if (rebuild < 0) return false;
     if (!rebuild) return true;
 
-    Nob_Cmd cmd = {0};
-    nob_cmd_append(&cmd, cfg.cxx);
-    add_common_cpp_flags(&cmd, cfg);
-    nob_cmd_append(&cmd, "-c", src, "-o", obj);
-    return nob_cmd_run(&cmd);
+    Nob_Cmd cmd = compile_cpp_command(cfg, src, obj);
+    if (cfg.jobs <= 1) return nob_cmd_run(&cmd);
+
+    Nob_Proc proc = nob_cmd_run_async(cmd);
+    if (proc == NOB_INVALID_PROC) return false;
+    return nob_procs_append_with_flush(procs, proc, cfg.jobs);
+}
+
+static bool compile_cpp_sources(Build_Config cfg, const char *group, Nob_File_Paths sources, Nob_File_Paths *objects) {
+    Nob_Procs procs = {0};
+    for (size_t i = 0; i < sources.count; ++i) {
+        if (!compile_cpp_async(cfg, group, sources.items[i], objects, &procs)) {
+            nob_procs_flush(&procs);
+            return false;
+        }
+    }
+    return nob_procs_flush(&procs);
 }
 
 static bool archive_static(Build_Config cfg, const char *out, Nob_File_Paths objects) {
@@ -215,16 +262,17 @@ static bool build_all(Build_Config cfg) {
     if (!collect_sources_recursive(GODOT_CPP_DIR "/gen/src", ".cpp", &godotcpp_sources)) return false;
 
     Nob_File_Paths godotcpp_objects = {0};
-    for (size_t i = 0; i < godotcpp_sources.count; ++i) {
-        if (!compile_cpp(cfg, "godotcpp", godotcpp_sources.items[i], &godotcpp_objects)) return false;
-    }
+    if (!compile_cpp_sources(cfg, "godotcpp", godotcpp_sources, &godotcpp_objects)) return false;
     const char *godotcpp_lib = LIB_DIR "/libgodot-cpp.a";
     if (!archive_static(cfg, godotcpp_lib, godotcpp_objects)) return false;
 
-    Nob_File_Paths extension_objects = {0};
+    Nob_File_Paths extension_source_paths = {0};
     for (size_t i = 0; i < NOB_ARRAY_LEN(extension_sources); ++i) {
-        if (!compile_cpp(cfg, "extension", extension_sources[i], &extension_objects)) return false;
+        nob_da_append(&extension_source_paths, extension_sources[i]);
     }
+
+    Nob_File_Paths extension_objects = {0};
+    if (!compile_cpp_sources(cfg, "extension", extension_source_paths, &extension_objects)) return false;
 
     if (!link_extension(cfg, extension_objects, godotcpp_lib, LUAJIT_STATIC)) return false;
     nob_log(NOB_INFO, "built %s", shared_library_path(cfg));
@@ -246,8 +294,8 @@ static bool clean(void) {
 }
 
 static void usage(const char *program) {
-    nob_log(NOB_INFO, "Usage: %s [build|clean] [debug|release] [platform=linux|macos|windows] [arch=x86_64|arm64] [luajit-no-lua52compat] [luajit-disable-ffi]", program);
-    nob_log(NOB_INFO, "Environment: CC, CXX and AR override the compiler toolchain. Example: CXX='zig c++' CC='zig cc' ./nob build release");
+    nob_log(NOB_INFO, "Usage: %s [build|clean] [debug|release] [platform=linux|macos|windows] [arch=x86_64|arm64] [-jN|jobs=N] [luajit-no-lua52compat] [luajit-disable-ffi]", program);
+    nob_log(NOB_INFO, "Environment: CC, CXX, AR and NOB_JOBS override defaults. Example: NOB_JOBS=8 CXX='zig c++' CC='zig cc' ./nob build release");
 }
 
 int main(int argc, char **argv) {
@@ -263,6 +311,7 @@ int main(int argc, char **argv) {
         .ar = getenv("AR") ? getenv("AR") : "ar",
         .luajit_lua52compat = true,
         .luajit_disable_ffi = false,
+        .jobs = default_job_count(),
     };
     const char *command = argc > 0 ? nob_shift(argv, argc) : "build";
 
@@ -272,6 +321,24 @@ int main(int argc, char **argv) {
         else if (strcmp(arg, "release") == 0) cfg.mode = MODE_RELEASE;
         else if (strncmp(arg, "platform=", 9) == 0) cfg.platform = arg + 9;
         else if (strncmp(arg, "arch=", 5) == 0) cfg.arch = arg + 5;
+        else if (strncmp(arg, "-j", 2) == 0) {
+            size_t jobs = parse_jobs_value(arg + 2);
+            if (jobs == 0) {
+                usage(program);
+                nob_log(NOB_ERROR, "invalid job count: %s", arg);
+                return 1;
+            }
+            cfg.jobs = jobs;
+        }
+        else if (strncmp(arg, "jobs=", 5) == 0) {
+            size_t jobs = parse_jobs_value(arg + 5);
+            if (jobs == 0) {
+                usage(program);
+                nob_log(NOB_ERROR, "invalid job count: %s", arg);
+                return 1;
+            }
+            cfg.jobs = jobs;
+        }
         else if (strcmp(arg, "luajit-no-lua52compat") == 0) cfg.luajit_lua52compat = false;
         else if (strcmp(arg, "luajit-disable-ffi") == 0) cfg.luajit_disable_ffi = true;
         else {
@@ -281,7 +348,10 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (strcmp(command, "build") == 0) return build_all(cfg) ? 0 : 1;
+    if (strcmp(command, "build") == 0) {
+        nob_log(NOB_INFO, "using %zu parallel build job(s)", cfg.jobs);
+        return build_all(cfg) ? 0 : 1;
+    }
     if (strcmp(command, "clean") == 0) return clean() ? 0 : 1;
     usage(program);
     nob_log(NOB_ERROR, "unknown command: %s", command);
